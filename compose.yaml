@@ -1,0 +1,24 @@
+services:
+  chores:
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file: .env
+    environment:
+      PORT: "3000"
+    volumes:
+      - chore-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cpus: 1.0
+    mem_limit: 256m
+
+volumes:
+  chore-data:

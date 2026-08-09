@@ -1,0 +1,15 @@
+{
+  "name": "Two of Us Chores",
+  "short_name": "Two of Us",
+  "id": "/",
+  "description": "A calm shared list for the chores that keep home moving.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f1ec",
+  "theme_color": "#f7f1ec",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

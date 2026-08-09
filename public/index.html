@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#17191e" media="(prefers-color-scheme: dark)">
+    <meta name="description" content="A calm shared list for the chores that keep home moving.">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="/icon.svg">
+    <link rel="mask-icon" href="/icon.svg" color="#b95263">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/styles.css?v=12">
+    <title>Two of Us · Chores</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#mainContent">Skip to chores</a>
+
+    <div class="offline-banner" id="offlineBanner" role="status" aria-live="polite" hidden>
+      <span class="status-dot" aria-hidden="true"></span>
+      <span>You are offline. Previously loaded chores remain visible; changes are paused until you reconnect.</span>
+    </div>
+
+    <main id="mainContent">
+      <section class="login-view" id="loginView" aria-labelledby="loginTitle">
+        <div class="login-card surface">
+          <p class="eyebrow">Two of Us</p>
+          <h1 id="loginTitle">Household chores</h1>
+          <p class="lede">Sign in to view and update the shared list.</p>
+          <form id="loginForm" novalidate>
+            <div class="field">
+              <label for="loginUser">Who is signing in?</label>
+              <select id="loginUser" name="userId" required>
+                <option value="D">Dylan</option>
+                <option value="M">Mady</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="loginPassword">Password</label>
+              <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+            </div>
+            <p class="form-message" id="loginError" role="alert" hidden></p>
+            <button class="button button-primary button-wide" type="submit">Open the list</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="app-view" id="appView" hidden aria-label="Chore list">
+        <header class="topbar shell">
+          <a class="wordmark" href="/" aria-label="Two of Us, home">
+            <span class="wordmark-mark" aria-hidden="true">2</span>
+            <span>two of us</span>
+          </a>
+          <nav class="top-actions" aria-label="App actions">
+            <span class="connection-status" id="connectionStatus" role="status" aria-live="polite"><span class="status-dot" aria-hidden="true"></span><span>Live</span></span>
+            <button class="button button-quiet" id="installButton" type="button" hidden>Install app</button>
+            <button class="button button-quiet" id="settingsButton" type="button">Settings</button>
+            <button class="button button-quiet" id="logoutButton" type="button">Sign out</button>
+          </nav>
+        </header>
+
+        <div class="shell dashboard">
+          <section class="dashboard-heading" aria-labelledby="dashboardTitle">
+            <div>
+              <p class="dashboard-date" id="dashboardDate">Today</p>
+              <h1 id="dashboardTitle">Today</h1>
+              <p class="dashboard-summary" id="todaySummary">Loading chores…</p>
+            </div>
+            <button class="button button-primary" id="addChoreButton" type="button"><span aria-hidden="true">+</span> Add chore</button>
+          </section>
+
+          <div class="view-tabs" role="tablist" aria-label="Chore views">
+            <button class="view-tab is-active" id="todayTab" type="button" role="tab" aria-selected="true" aria-controls="todayPanel" tabindex="0" data-view="today">Today</button>
+            <button class="view-tab" id="calendarTab" type="button" role="tab" aria-selected="false" aria-controls="calendarPanel" tabindex="-1" data-view="calendar">Calendar</button>
+            <button class="view-tab" id="historyTab" type="button" role="tab" aria-selected="false" aria-controls="historyPanel" tabindex="-1" data-view="history">History</button>
+          </div>
+
+          <div class="dashboard-toolbar">
+            <div class="filter-bar" role="group" aria-label="Filter chores by person">
+              <button class="filter-button is-active" type="button" data-filter="all" aria-pressed="true">Everyone</button>
+              <button class="filter-button" type="button" data-filter="D" aria-pressed="false">Dylan</button>
+              <button class="filter-button" type="button" data-filter="M" aria-pressed="false">Mady</button>
+            </div>
+            <p class="list-summary" id="listSummary">Loading…</p>
+          </div>
+
+          <div class="loading-state" id="loadingState" aria-live="polite">
+            <span class="skeleton skeleton-title"></span>
+            <span class="skeleton skeleton-card"></span>
+            <span class="skeleton skeleton-card"></span>
+          </div>
+          <div class="error-state surface" id="errorState" hidden role="alert">
+            <h3>Couldn’t refresh chores</h3>
+            <p id="errorCopy">Check your connection and try again.</p>
+            <button class="button button-secondary" id="retryButton" type="button">Try again</button>
+          </div>
+
+          <section id="todayPanel" role="tabpanel" aria-labelledby="todayTab">
+            <div class="empty-state surface" id="emptyState" hidden>
+              <span class="empty-mark" aria-hidden="true">✓</span>
+              <h2 id="emptyTitle">All done for today</h2>
+              <p id="emptyCopy">There’s nothing due right now.</p>
+              <button class="button button-secondary" id="emptyAddButton" type="button">Add a chore</button>
+            </div>
+            <div class="chore-sections" id="choreSections"></div>
+          </section>
+
+          <section class="calendar-panel" id="calendarPanel" role="tabpanel" aria-labelledby="calendarTab" hidden>
+            <div class="calendar-toolbar">
+              <button class="icon-button" id="previousMonth" type="button" aria-label="Previous month">‹</button>
+              <h2 id="calendarTitle" aria-live="polite">Month</h2>
+              <button class="icon-button" id="nextMonth" type="button" aria-label="Next month">›</button>
+            </div>
+            <div class="calendar-weekdays" role="row"><span role="columnheader">Sun</span><span role="columnheader">Mon</span><span role="columnheader">Tue</span><span role="columnheader">Wed</span><span role="columnheader">Thu</span><span role="columnheader">Fri</span><span role="columnheader">Sat</span></div>
+            <p class="calendar-empty" id="calendarEmpty" hidden>No chores scheduled this month.</p>
+            <div class="calendar-grid" id="calendarGrid" role="grid" aria-labelledby="calendarTitle"></div>
+          </section>
+
+          <section class="history-panel" id="historyPanel" role="tabpanel" aria-labelledby="historyTab" hidden>
+            <div class="history-empty empty-state surface" id="historyEmpty" hidden>
+              <span class="empty-mark" aria-hidden="true">✓</span>
+              <h2>No completed chores yet</h2>
+              <p>Completed chores will appear here.</p>
+            </div>
+            <div class="history-groups" id="historyGroups"></div>
+          </section>
+
+          <footer class="app-footer"><span id="lastUpdated">Waiting for the first refresh.</span></footer>
+        </div>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+
+    <dialog class="dialog" id="choreDialog" aria-labelledby="choreDialogTitle">
+      <form class="dialog-card" id="choreForm" novalidate>
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">Make the next step clear</p>
+            <h2 id="choreDialogTitle">Add a chore</h2>
+          </div>
+          <button class="icon-button" id="closeChoreButton" type="button" aria-label="Close chore dialog">×</button>
+        </div>
+        <div class="dialog-body">
+          <div class="field">
+            <label for="choreTitle">What needs doing?</label>
+            <input id="choreTitle" name="title" maxlength="120" required autocomplete="off" aria-describedby="titleError" aria-invalid="false">
+            <p class="field-error" id="titleError" hidden></p>
+          </div>
+          <div class="form-grid two-columns">
+            <div class="field">
+              <label for="choreAssignee">For</label>
+              <select id="choreAssignee" name="assigneeId" required>
+                <option value="D">Dylan</option>
+                <option value="M">Mady</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="choreDate">Next due date</label>
+              <input id="choreDate" name="nextDue" type="date" required>
+            </div>
+          </div>
+          <fieldset class="field-group">
+            <legend>Repeat</legend>
+            <div class="form-grid two-columns">
+              <div class="field">
+                <label for="scheduleKind">Schedule</label>
+                <select id="scheduleKind" name="scheduleKind" required>
+                  <option value="once">Once</option>
+                  <option value="daily">Daily</option>
+                  <option value="every">Every N days</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div class="field" id="intervalField" hidden>
+                <label for="scheduleInterval">Every</label>
+                <div class="input-with-suffix">
+                  <input id="scheduleInterval" name="scheduleInterval" type="number" inputmode="numeric" min="1" max="365" value="1">
+                  <span id="intervalSuffix">days</span>
+                </div>
+              </div>
+            </div>
+            <div class="weekday-picker" id="weekdayPicker" hidden>
+              <span class="field-label" id="weekdayLabel">On these days</span>
+              <div class="weekday-options" role="group" aria-labelledby="weekdayLabel" aria-describedby="weekdayError" aria-invalid="false">
+                <label><input type="checkbox" name="weekday" value="0" aria-describedby="weekdayError" aria-invalid="false"><span>Sun</span></label>
+                <label><input type="checkbox" name="weekday" value="1" aria-describedby="weekdayError" aria-invalid="false"><span>Mon</span></label>
+                <label><input type="checkbox" name="weekday" value="2" aria-describedby="weekdayError" aria-invalid="false"><span>Tue</span></label>
+                <label><input type="checkbox" name="weekday" value="3" aria-describedby="weekdayError" aria-invalid="false"><span>Wed</span></label>
+                <label><input type="checkbox" name="weekday" value="4" aria-describedby="weekdayError" aria-invalid="false"><span>Thu</span></label>
+                <label><input type="checkbox" name="weekday" value="5" aria-describedby="weekdayError" aria-invalid="false"><span>Fri</span></label>
+                <label><input type="checkbox" name="weekday" value="6" aria-describedby="weekdayError" aria-invalid="false"><span>Sat</span></label>
+              </div>
+              <p class="field-error" id="weekdayError" hidden></p>
+            </div>
+            <p class="field-hint" id="scheduleHint">A one-time chore leaves the list when completed.</p>
+          </fieldset>
+          <fieldset class="field-group">
+            <legend>Reminder</legend>
+            <div class="form-grid two-columns">
+              <div class="field">
+                <label for="reminderMode">Reminder</label>
+                <select id="reminderMode" name="reminderMode">
+                  <option value="inherit">Use assignee’s default</option>
+                  <option value="override">Choose a time</option>
+                  <option value="off">No reminder</option>
+                </select>
+              </div>
+              <div class="field" id="reminderTimeField" hidden>
+                <label for="reminderTime">At</label>
+                <input id="reminderTime" name="reminderTime" type="time">
+              </div>
+            </div>
+            <p class="field-hint">Push reminders require permission in Settings.</p>
+          </fieldset>
+          <p class="form-message" id="choreError" role="alert" hidden></p>
+        </div>
+        <div class="dialog-actions">
+          <button class="button button-quiet" id="cancelChoreButton" type="button">Cancel</button>
+          <button class="button button-primary" id="saveChoreButton" type="submit">Save chore</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="dialog" id="settingsDialog" aria-labelledby="settingsTitle">
+      <div class="dialog-card">
+        <div class="dialog-header">
+          <div>
+            <p class="eyebrow">Your preferences</p>
+            <h2 id="settingsTitle">Settings</h2>
+          </div>
+          <button class="icon-button" id="closeSettingsButton" type="button" aria-label="Close settings dialog">×</button>
+        </div>
+        <div class="dialog-body">
+          <section class="settings-section" aria-labelledby="themeTitle">
+            <div><h3 id="themeTitle">Theme</h3><p class="field-hint">Saved on this device.</p></div>
+            <div class="theme-options" id="themeOptions" role="radiogroup" aria-labelledby="themeTitle">
+              <label><input type="radio" name="theme" value="system"><span class="theme-choice" data-theme-preview="system"><i aria-hidden="true"></i><strong>System</strong></span></label>
+              <label><input type="radio" name="theme" value="light"><span class="theme-choice" data-theme-preview="light"><i aria-hidden="true"></i><strong>Light</strong></span></label>
+              <label><input type="radio" name="theme" value="dark"><span class="theme-choice" data-theme-preview="dark"><i aria-hidden="true"></i><strong>Dark</strong></span></label>
+              <label><input type="radio" name="theme" value="blush"><span class="theme-choice" data-theme-preview="blush"><i aria-hidden="true"></i><strong>Pink</strong></span></label>
+              <label><input type="radio" name="theme" value="lavender"><span class="theme-choice" data-theme-preview="lavender"><i aria-hidden="true"></i><strong>Lavender</strong></span></label>
+              <label><input type="radio" name="theme" value="mint"><span class="theme-choice" data-theme-preview="mint"><i aria-hidden="true"></i><strong>Mint</strong></span></label>
+              <label><input type="radio" name="theme" value="sunshine"><span class="theme-choice" data-theme-preview="sunshine"><i aria-hidden="true"></i><strong>Sunshine</strong></span></label>
+              <label><input type="radio" name="theme" value="flowers"><span class="theme-choice" data-theme-preview="flowers"><i aria-hidden="true">✿</i><strong>Flowers</strong></span></label>
+              <label><input type="radio" name="theme" value="meadow-notes"><span class="theme-choice" data-theme-preview="meadow-notes"><i aria-hidden="true"></i><strong>Meadow Notes</strong></span></label>
+              <label><input type="radio" name="theme" value="tidepool"><span class="theme-choice" data-theme-preview="tidepool"><i aria-hidden="true"></i><strong>Tidepool</strong></span></label>
+              <label><input type="radio" name="theme" value="midnight-plum"><span class="theme-choice" data-theme-preview="midnight-plum"><i aria-hidden="true"></i><strong>Midnight Plum</strong></span></label>
+              <label><input type="radio" name="theme" value="apricot"><span class="theme-choice" data-theme-preview="apricot"><i aria-hidden="true"></i><strong>Apricot</strong></span></label>
+              <label><input type="radio" name="theme" value="forest-night"><span class="theme-choice" data-theme-preview="forest-night"><i aria-hidden="true"></i><strong>Forest Night</strong></span></label>
+              <label><input type="radio" name="theme" value="sky-notebook"><span class="theme-choice" data-theme-preview="sky-notebook"><i aria-hidden="true"></i><strong>Sky Notebook</strong></span></label>
+              <label><input type="radio" name="theme" value="pistachio"><span class="theme-choice" data-theme-preview="pistachio"><i aria-hidden="true"></i><strong>Pistachio</strong></span></label>
+              <label><input type="radio" name="theme" value="lemonade"><span class="theme-choice" data-theme-preview="lemonade"><i aria-hidden="true"></i><strong>Lemonade</strong></span></label>
+            </div>
+          </section>
+          <section class="settings-section" aria-labelledby="pushTitle">
+            <div class="settings-heading">
+              <div><h3 id="pushTitle">Push reminders</h3><p id="pushStatus">Checking availability…</p></div>
+              <button class="button button-secondary" id="pushButton" type="button">Enable push</button>
+            </div>
+            <p class="field-hint" id="iosPushHint" hidden>On iPhone or iPad, add this app to your Home Screen before enabling push.</p>
+          </section>
+          <form id="settingsForm" class="settings-section" novalidate>
+            <h3>Notification times</h3>
+            <div class="settings-time-row">
+              <label class="check-field"><input type="checkbox" id="digestEnabled"><span>Daily digest</span></label>
+              <input class="time-input" id="digestTime" type="time" aria-label="Daily digest time">
+            </div>
+            <div class="settings-time-row">
+              <label class="check-field"><input type="checkbox" id="missedEnabled"><span>Missed chore alert</span></label>
+              <input class="time-input" id="missedAlertTime" type="time" aria-label="Missed chore alert time">
+            </div>
+            <div class="settings-time-row">
+              <label class="check-field"><input type="checkbox" id="defaultReminderEnabled"><span>Default chore reminder</span></label>
+              <input class="time-input" id="defaultReminderTime" type="time" aria-label="Default chore reminder time">
+            </div>
+            <p class="field-hint">Times use the household timezone.</p>
+            <p class="form-message" id="settingsError" role="alert" hidden></p>
+            <div class="inline-actions"><button class="button button-secondary" type="submit">Save times</button><span class="success-text" id="settingsSuccess" hidden>Saved.</span></div>
+          </form>
+          <form id="passwordForm" class="settings-section" novalidate>
+            <h3>Change password</h3>
+            <div class="field"><label for="currentPassword">Current password</label><input id="currentPassword" type="password" autocomplete="current-password" required></div>
+            <div class="form-grid two-columns">
+              <div class="field"><label for="newPassword">New password</label><input id="newPassword" type="password" autocomplete="new-password" minlength="12" required></div>
+              <div class="field"><label for="confirmPassword">Confirm new password</label><input id="confirmPassword" type="password" autocomplete="new-password" minlength="12" required></div>
+            </div>
+            <p class="field-hint">Use at least 12 characters. Other sessions will be signed out.</p>
+            <p class="form-message" id="passwordError" role="alert" hidden></p>
+            <div class="inline-actions"><button class="button button-secondary" type="submit">Update password</button><span class="success-text" id="passwordSuccess" hidden>Updated.</span></div>
+          </form>
+          <p class="install-hint" id="installHint" hidden>For a focused home-screen experience, use your browser’s install option.</p>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="dialog confirm-dialog" id="confirmDialog" aria-labelledby="confirmTitle">
+      <div class="dialog-card">
+        <div class="dialog-header">
+          <div><p class="eyebrow">Permanent change</p><h2 id="confirmTitle">Remove this chore?</h2></div>
+          <button class="icon-button" id="closeConfirmButton" type="button" aria-label="Close confirmation dialog">×</button>
+        </div>
+        <div class="dialog-body"><p id="confirmCopy">This removes the chore for both people.</p></div>
+        <div class="dialog-actions"><button class="button button-quiet" id="cancelConfirmButton" type="button">Keep it</button><button class="button button-danger" id="confirmDeleteButton" type="button">Remove chore</button></div>
+      </div>
+    </dialog>
+
+    <script src="/app.js?v=12" type="module"></script>
+  </body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "two-of-us-chores",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test",
+    "backup": "node src/backup.mjs"
+  },
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
+}
