@@ -2,9 +2,26 @@
 
 Two-user chore app for Dylan and Mady. It is one Node 24 process backed by SQLite, with server-sent events for live refresh and optional Web Push notifications.
 
-**Deploy on Proxmox:** follow the [native LXC setup guide](docs/PROXMOX.md).
-It includes container creation, Node installation, systemd, your existing HTTPS
-proxy, push keys, and copyable backup/update/restore commands. Docker is optional.
+**Deploy on Proxmox:** in a Debian 13 LXC, run as root:
+
+```sh
+apt-get update && apt-get install -y git ca-certificates
+git clone https://github.com/Dudiebug/two-of-us-chores.git /opt/two-of-us-chores
+cd /opt/two-of-us-chores
+bash install.sh
+```
+
+The wizard installs Node and dependencies, suggests the LXC address/timezone,
+asks for your HTTPS browser URL and initial passwords, optionally generates push
+keys, and starts the app automatically with systemd. It keeps existing accounts,
+data paths and keys when rerun. Your existing reverse proxy handles HTTPS.
+See the [LXC guide](docs/PROXMOX.md) for the proxy settings and recovery instructions.
+
+From `/opt/two-of-us-chores`, use `bash install.sh --configure` to change the URL,
+`bash install.sh --check https://YOUR-BROWSER-HOSTNAME` to diagnose login/proxy
+problems, and `bash install.sh --update` for a backup followed by a fast-forward
+update. A failed public check leaves the locally running app available for proxy
+configuration and returns a nonzero exit status.
 
 ## How to use
 
@@ -124,17 +141,20 @@ The Compose resource settings are one CPU and a 256 MB memory ceiling. They are 
 | `HOUSEHOLD_TIMEZONE` | IANA timezone used for dates and notification times; defaults to `America/Los_Angeles`. |
 | `DATA_DIR`, `DATABASE_PATH` | Persistent SQLite location; Docker defaults to `/data/chores.db`. |
 | `BACKUP_DIR` | Default backup directory; Docker defaults to `/data/backups`. |
-| `VAPID_SUBJECT`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Optional Web Push configuration. Set all three or leave all three empty. |
+| `VAPID_SUBJECT`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Push is enabled when all three are set. The wizard clears the contact but retains the keys when disabling push. |
 | `ALLOW_INSECURE_LOCALHOST` | `true` only for local HTTP development. |
 
 VAPID keys can be generated after dependencies are installed with `pnpm exec web-push generate-vapid-keys`. Push still requires HTTPS and, on iOS/iPadOS, an installed Home Screen PWA.
 
 ## Proxmox LXC deployment
 
-Use the [native Node/systemd LXC guide](docs/PROXMOX.md) for the lightweight setup.
-The checked-in [service unit](deploy/two-of-us-chores.service) and
-[LXC environment template](deploy/lxc.env.example) match its commands. This approach
-does not need Docker nesting or a privileged LXC.
+Use the [guided installer](install.sh) and [LXC guide](docs/PROXMOX.md) for the
+lightweight setup. This approach does not need Docker nesting or a privileged LXC.
+The [configuration helper](deploy/create-lxc-config.sh) can also be run separately
+after dependencies are installed; restart the service afterward to load changes.
+It preserves existing keys. Disabling push clears the contact setting while keeping
+the key pair for later re-enabling; no browser re-subscription is needed just to
+rerun the wizard with the same URL and keys.
 
 Point the existing HTTPS reverse proxy at port 3000 as described above. The public hostname must exactly match `APP_ORIGIN`; Web Push and service workers do not work over ordinary HTTP. The LXC also needs outbound HTTPS access to browser push services. Keep the VAPID private key and `.env` out of backups that are shared or published.
 

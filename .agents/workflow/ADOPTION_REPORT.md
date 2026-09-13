@@ -1,5 +1,92 @@
 # Workflow adoption result
 
+## Guided LXC installation — 2026-09-13
+
+Status: COMPLETE for implementation and local verification. User approved option 1
+(native Node/SQLite, existing HTTPS proxy), this workflow, and commit/push to GitHub
+main. Candidate: the commit containing this record, based on 9517901. Publishing is
+verified separately by comparing the pushed remote ref with the local commit.
+Detailed executable spec approval: not obtained separately (autonomous run under
+the approved plan). Old Coder high-assurance procedure adapted to repository
+proportional-verification policy; self_review, not independent verification.
+Graphify: no graph exists; targeted source/caller inspection used (manual fallback).
+
+Contract: a root-run Debian LXC installer installs the supported Node runtime and
+locked dependencies, asks for the browser URL and initial credentials, detects
+network/timezone defaults, optionally generates push keys, installs systemd and
+checks local/public reachability. Repeat configuration preserves passwords, keys,
+unknown settings and data paths. Invalid/interrupted configuration never replaces
+the old file. Updates reject dirty/diverged checkouts and back up database/config
+before changing installed code. Origin checking remains strict, with actionable
+errors and an explicit diagnostic command. No new production dependency, Docker,
+Proxmox-host manipulation or proxy-account integration.
+
+Owned scope: install.sh, deployment helpers, origin error wording, relevant tests,
+README/Proxmox instructions and this canonical record. Existing uncommitted helper
+and documentation edits are incorporated; historical evidence below is preserved.
+
+Failure model / planned sensors: temporary-filesystem config and rerun tests
+(secrets/key rotation/partial writes); real HTTP positive and negative origin probes
+(diagnostic false positives, missing/rewritten headers, auth protection); shell
+orchestration tests with host/package/service boundaries substituted (update order,
+backup failures and dirty checkout rejection); full existing Node suite; syntax,
+unit validation, workflow validator and diff review. No system packages or live
+services installed on this workstation. Actual Debian LXC/reboot/proxy/device push
+remain UNVERIFIED here. Docker config/build attempted only if Docker is available.
+Rollback: keep pre-update database, private configuration and previous Git revision;
+stop service before restoring all three. Never run old code on a migrated database.
+
+Delivered: `bash install.sh`, `--configure`, `--update`, and `--check [HTTPS_URL]`.
+The wizard defaults to the current config, detects interface/timezone choices,
+normalizes the HTTPS origin, stores credentials privately/atomically and retains
+keys when push is disabled. Database-backed accounts are not reseeded. The service
+runs as `chores`; code/dependencies stay readable under a restrictive install umask.
+Recovery bundles contain integrity-checked SQLite data, config and previous revision.
+The login origin guard is unchanged except for an error message naming the expected
+URL. Diagnostics use empty login requests, creating no session or throttle attempts.
+
+| Check | Result and scope |
+| --- | --- |
+| Baseline | PASS: Node 24.21.0, `pnpm test`, 37 tests before implementation. |
+| Test-first | Four wizard and three diagnostic tests failed before implementation; installer/update and recovery tests failed against explicit stubs. A dangling-config-symlink regression failed before repair. |
+| Final product suite | PASS: `pnpm test`, Node 24.21.0, 52 tests, 52 passed, 0 failed/skipped. Fifteen new tests cover wizard reruns/invalid inputs, literal shell-like secrets, existing accounts, origin/proxy diagnostics, update ordering/failure and restorable recovery. |
+| Deliberate faults | PASS: `node tools/verify-installer-mutations.mjs`, 3/3 faults rejected by their named regressions: key rotation on rerun, disabled origin checking, and dirty checkout updates. Mutants ran in disposable copies. |
+| Native install smoke | PASS: `bash tools/verify-lxc-install.sh`, rootless Podman, Debian 13 amd64, real Node 24.21.0 and pnpm 11.16.0 downloads/install, real systemd unit and service user. Verified private config, actual login/chore creation, byte-identical config after reconfigure/update, backup-before-update, and session/chore persistence after container restart. The deliberately invalid public hostname returns exit 1; local service remains running. |
+| Syntax/config | PASS: Node syntax checks for changed modules; Bash syntax for installer/helpers and README/Proxmox command blocks; `systemd-analyze verify` executed inside the Debian smoke test. |
+| Workflow and review | PASS: workflow structural validator and Git whitespace check. self_review of the actual candidate diff, capabilities, failure handling and publishable files. No independent review claimed. |
+| Docker Compose | UNVERIFIED: Docker/Compose are unavailable. Native Podman smoke test does not claim to validate the unchanged Docker Compose deployment. |
+| Actual Proxmox/device runtime | UNVERIFIED here: real LXC isolation/firewall, public DNS/certificate/proxy routing, live multi-browser refresh, real push and device PWA installation. Use the README/Proxmox checklist on the deployed candidate. |
+
+Corrections during verification: the first disposable-systemd run failed at USER
+because Podman lacked mount-namespace capability inside its rootless user namespace;
+the harness grants SYS_ADMIN inside that namespace, while the production unit and
+host privileges are unchanged. The config stability assertion exposed key ordering,
+fixed by deterministic serialization. The update smoke initially omitted the real
+.gitignore and correctly rejected untracked dependencies; the fixture now includes
+it. No product assertion was weakened. A failed config-symlink regression was fixed
+with lstat checks that also reject dangling symlinks. The final smoke test exited 0
+and cleaned up its container/image; it is not a claim about Proxmox behavior.
+
+No dependency changes, type/lint framework, coverage threshold, graph rebuild or
+browser rendering suite were added. These are deliberate repository-policy
+adaptations: the change is deployment/configuration plus error wording, and the
+new behavioral, fault-injection and real systemd checks observe its main risks.
+TLS end-to-end and physical-device behavior remain at the declared runtime boundary.
+No host packages or live service were installed; Corepack cached the pinned pnpm
+for its version check, and Podman used disposable test images/containers.
+
+## LXC first-configuration helper — 2026-09-12
+
+Added a dependency-free interactive Bash helper for the native LXC setup. It uses
+the supplied `https://chores.dudiebug.net` default, detects or falls back to the
+`192.168.0.112` private address, validates the origin/IP/timezone/contact email,
+securely confirms distinct initial passwords, generates VAPID keys using the existing
+`web-push` dependency, writes the complete environment file with mode 0600, and
+atomically replaces an existing file when explicitly rerun. PASS: Bash syntax, a
+full temporary-config dry run, key/config assertions, file-mode check, overwrite
+check and diff check.
+No real password, VAPID key or `/etc` file was used; no LXC service was changed.
+
 ## Publication task: settings gear and native LXC documentation — 2026-09-12
 
 User approved the icon correction, documentation, native deployment support, and

@@ -386,7 +386,9 @@ function validatedChore(body) {
 }
 
 function enforceMutation(req, origin, needsJson) {
-  if (req.headers.origin !== origin) throw Object.assign(new Error("Cross-origin request rejected"), { status: 403 });
+  if (req.headers.origin !== origin) throw Object.assign(new Error(
+    `Cross-origin request rejected. This server expects ${origin}. Check the browser URL and reverse proxy, then restart the service after changing its configuration.`,
+  ), { status: 403 });
   if (needsJson && req.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/json") {
     throw Object.assign(new Error("JSON required"), { status: 415 });
   }
