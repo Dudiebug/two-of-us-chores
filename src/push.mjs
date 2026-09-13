@@ -7,7 +7,7 @@ export function createPush(db, env = process.env, sendNotification = (...args) =
   return {
     configured,
     publicKey: configured ? env.VAPID_PUBLIC_KEY : null,
-    async send(userId, title, body) {
+    async send(userId, title, body, options = {}) {
       if (!configured) return false;
       const subscriptions = db.prepare("SELECT endpoint,user_id,p256dh,auth FROM push_subscriptions WHERE user_id=?").all(userId);
       let delivered = 0;
@@ -16,7 +16,7 @@ export function createPush(db, env = process.env, sendNotification = (...args) =
         try {
           await sendNotification(
             { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } },
-            JSON.stringify({ title, body, url: "/" }),
+            JSON.stringify({ title, body, url: options.url || "/app", tag: options.tag }),
           );
           delivered += 1;
         } catch (error) {

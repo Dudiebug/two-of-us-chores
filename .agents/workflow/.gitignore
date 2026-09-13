@@ -1,0 +1,5 @@
+# Local machine references, raw evidence and optional instruction cache.
+*.local.json
+runs/
+skill-cache/
+__pycache__/

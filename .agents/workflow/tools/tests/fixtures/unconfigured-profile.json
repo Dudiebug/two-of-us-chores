@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "core_version": "3.0.0",
+  "adoption_status": "UNCONFIGURED",
+  "repository": {
+    "identity": null,
+    "inspected_ref": null,
+    "source_roots": [],
+    "test_roots": [],
+    "instruction_paths": [
+      "AGENTS.md"
+    ],
+    "strategy_path": null,
+    "canonical_task_record": null,
+    "canonical_evidence_record": null,
+    "architecture_invariants": [],
+    "protected_paths": [],
+    "generated_paths": []
+  },
+  "execution": {
+    "mode": "single",
+    "primary_agent": "current_agent",
+    "delegation": {
+      "enabled": false,
+      "supported_tools": [],
+      "max_helpers": 0,
+      "recursive": false,
+      "isolation": "disjoint_files_or_worktrees",
+      "integration_owner": "primary_agent"
+    },
+    "repair_replan_after": 2
+  },
+  "review": {
+    "task": "self_review",
+    "milestone": "inherit_repository",
+    "independent_required": false,
+    "independent_requirement_source": null,
+    "no_independence_claim_from_self_review": true
+  },
+  "permissions": {
+    "inherit_existing_authorizations": true,
+    "allowed_local_operations": [],
+    "requires_explicit_authorization": [
+      "global_install_or_upgrade",
+      "provider_credentials_or_agent_hooks",
+      "unapproved_external_semantic_extraction",
+      "interactive_game_or_device_control",
+      "live_service_or_production_data_changes",
+      "push_merge_publish",
+      "paid_or_background_services"
+    ],
+    "prohibited_operations": []
+  },
+  "environments": [],
+  "skills": [
+    {
+      "name": "old-coder",
+      "definition_status": "UNVERIFIED",
+      "entry_reference": null,
+      "actual_revision": null,
+      "runtime_status": "NOT_REQUIRED",
+      "fallback": "bundled proportional testing policy; do not claim full upstream skill execution"
+    },
+    {
+      "name": "ponytail",
+      "definition_status": "UNVERIFIED",
+      "entry_reference": null,
+      "actual_revision": null,
+      "runtime_status": "NOT_REQUIRED",
+      "fallback": "bundled minimal-correct-implementation policy; disclose missing definition"
+    },
+    {
+      "name": "graphify",
+      "definition_status": "UNVERIFIED",
+      "entry_reference": null,
+      "actual_revision": null,
+      "runtime_status": "UNVERIFIED",
+      "fallback": "targeted source/caller/import inspection; label manual or degraded"
+    }
+  ],
+  "graph": {
+    "authority": "advisory",
+    "location": null,
+    "mode": "structural_or_current_agent_only",
+    "external_semantic_calls": false,
+    "background_watch": false,
+    "automatic_hooks": false,
+    "refresh_policy": "material_topology_change_or_milestone"
+  },
+  "sensors": [],
+  "profiles": {
+    "focused": [],
+    "milestone": []
+  },
+  "evidence": {
+    "prefer_existing_runner": true,
+    "runner_reference": null,
+    "record_location": null,
+    "candidate_identity": "use_repo_commit_diff_and_relevant_artifact_identity",
+    "no_automatic_acceptance": true
+  },
+  "readiness": {
+    "bindings": "UNVERIFIED",
+    "representative_repo_check": "UNVERIFIED",
+    "skill_definitions": "UNVERIFIED",
+    "host_entry_point": "UNVERIFIED",
+    "blockers": [],
+    "evidence_references": []
+  }
+}

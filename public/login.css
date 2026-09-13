@@ -1,0 +1,20 @@
+:root { color-scheme: light; font-family: "Avenir Next", system-ui, sans-serif; background: #faf9f6; color: #12202d; }
+* { box-sizing: border-box; }
+body { min-height: 100svh; margin: 0; display: grid; place-items: center; padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom)); }
+.login-view { width: min(100%, 26rem); }
+.login-card { padding: clamp(1.5rem, 6vw, 2.5rem); border: 1px solid #dce0e7; border-radius: 16px; background: #fff; box-shadow: 0 1rem 3rem rgb(25 31 42 / .12); }
+.wordmark { margin: 0 0 1.75rem; font-size: 1.5rem; font-weight: 750; letter-spacing: -.06em; }
+h1 { margin: .5rem 0; font-size: clamp(2rem, 9vw, 3rem); }
+.lede { margin: 0 0 1.5rem; color: #59616d; }
+form { display: grid; gap: 1rem; }
+label { display: grid; gap: .4rem; font-size: .9rem; font-weight: 700; }
+input, select, button { min-height: 2.9rem; border-radius: 8px; font: inherit; }
+input, select { width: 100%; border: 1px solid #cbd1da; padding: .65rem .8rem; background: #fff; color: #20242c; }
+button { border: 0; padding: .65rem 1rem; background: #087f83; color: #fff; font-weight: 700; cursor: pointer; }
+.password-field { display: flex; gap: .25rem; margin-top: .4rem; }
+.password-field input { min-width: 0; }
+#togglePassword { background: transparent; color: #087f83; min-width: 60px; }
+:is(button, input, select):focus-visible { outline: 2px solid #087f83; outline-offset: 3px; }
+button:disabled { opacity: .6; cursor: wait; }
+#loginError { margin: 0; color: #b3261e; }
+@media (prefers-color-scheme: dark) { :root { color-scheme: dark; background: #161e20; color: #edf4f2; } .login-card, input, select { background: #202b2d; color: #edf4f2; border-color: #7f9b9c; } .lede { color: #b3c5c7; } #togglePassword { color: #70d3cd; } #loginError { color: #ffa6b5; } }

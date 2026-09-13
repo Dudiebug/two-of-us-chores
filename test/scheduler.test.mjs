@@ -79,3 +79,24 @@ test("missed and digest notifications group and deduplicate across restart", asy
     throw error;
   }
 });
+
+test("reminders catch up within one hour without repeating", async () => {
+  const { db } = await fixture();
+  const sent = [];
+  try {
+    db.prepare("UPDATE users SET default_reminder_time='09:00' WHERE id='D'").run();
+    insertChore(db, { title: "Bins", nextDue: "2024-06-10", reminderMode: "inherit" });
+    const scheduler = createScheduler({
+      db,
+      timeZone: "America/Chicago",
+      now: () => new Date("2024-06-10T14:30:00.000Z"),
+      send: async (...message) => { sent.push(message); return true; },
+    });
+    await scheduler.tick();
+    await scheduler.tick();
+    scheduler.stop();
+    assert.deepEqual(sent, [["D", "Chore reminder", "Bins", { tag: "chore-1-2024-06-10" }]]);
+  } finally {
+    db.close();
+  }
+});

@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openDatabase, publicState, transaction } from "./db.mjs";
+import { openDatabase, publicState, transaction, CAN_UNDO } from "./db.mjs";
 import { daysBetween, localDateTime, nextOccurrence, normalizeSchedule, shiftSeries } from "./recurrence.mjs";
 import { createPush } from "./push.mjs";
 import { createScheduler, rolloverMissed } from "./scheduler.mjs";
@@ -13,8 +13,9 @@ const JSON_LIMIT = 32 * 1024;
 const SESSION_MS = 30 * 86400_000;
 const LOGIN_WINDOW_MS = 15 * 60_000;
 const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-const throttle = new Map();
 const staticCache = new Map();
+const PUBLIC_FILES = new Set(["/login.css", "/login.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/sw.js", "/offline.html"]);
+const PRIVATE_FILES = new Set(["/app.js", "/calendar-recurrence.js", "/styles.css"]);
 
 export async function createApp(options = {}) {
   const env = { ...process.env, ...options.env };
@@ -32,6 +33,7 @@ export async function createApp(options = {}) {
   const push = options.push || createPush(db, env);
   const clock = options.now || (() => new Date());
   const clients = new Map();
+  const throttle = new Map();
   const broadcast = (targetUserId = null) => {
     for (const [res, client] of clients) {
       if (targetUserId && client.userId !== targetUserId) continue;
@@ -42,8 +44,13 @@ export async function createApp(options = {}) {
       }
     }
   };
-  const timeZone = env.HOUSEHOLD_TIMEZONE || "America/Chicago";
-  const scheduler = createScheduler({ db, timeZone, send: push.send, changed: broadcast, now: clock });
+  const timeZone = env.HOUSEHOLD_TIMEZONE || "America/Los_Angeles";
+  const send = push.send.bind(push);
+  const notify = (actorId, title, body, key) => activityNotification(db, send, actorId, title, body, key);
+  const scheduler = createScheduler({ db, timeZone, send, changed: broadcast, now: clock });
+  const cleanupTimer = setInterval(() => purgeExpiredSessions(db), 60_000);
+  cleanupTimer.unref?.();
+  purgeExpiredSessions(db);
   const startupNow = clock();
   if (rolloverMissed(db, localDateTime(timeZone, startupNow).date).length) broadcast();
   await scheduler.tick();
@@ -55,11 +62,20 @@ export async function createApp(options = {}) {
       const path = url.pathname;
       if (req.method === "GET" && path === "/healthz") return json(res, 200, { ok: true });
       if (req.method !== "GET" && path.startsWith("/api/")) enforceMutation(req, appOrigin, needsJsonBody(req, path));
-      if (req.method === "POST" && path === "/api/session") return await login(req, res, db, localInsecure);
+      if (req.method === "POST" && path === "/api/session") return await login(req, res, db, localInsecure, throttle);
 
       const session = authenticate(req, db);
+      if (req.method === "GET" && path === "/") return redirect(res, session ? "/app" : "/login");
+      if (req.method === "GET" && path === "/login") return session ? redirect(res, "/app") : staticFile("/login.html", res, true);
+      if (req.method === "GET" && path === "/app") return session ? staticFile("/index.html", res, false) : redirect(res, "/login");
+      if (req.method === "GET" && PUBLIC_FILES.has(path)) return staticFile(path, res, true);
+      if (req.method === "GET" && PRIVATE_FILES.has(path)) {
+        if (!session) return json(res, 401, { error: "Please sign in" });
+        return staticFile(path, res, false);
+      }
       if (path.startsWith("/api/") && !session) return json(res, 401, { error: "Please sign in" });
       if (req.method === "DELETE" && path === "/api/session") {
+        db.prepare("DELETE FROM push_subscriptions WHERE session_hash=?").run(session.tokenHash);
         db.prepare("DELETE FROM sessions WHERE token_hash=?").run(session.tokenHash);
         closeStreams(clients, (client) => client.tokenHash === session.tokenHash);
         res.setHeader("Set-Cookie", sessionCookie("", !localInsecure, 0));
@@ -75,21 +91,26 @@ export async function createApp(options = {}) {
       if (req.method === "GET" && path === "/api/push-key") {
         return json(res, 200, { configured: push.configured, publicKey: push.publicKey });
       }
-      if (req.method === "POST" && path === "/api/chores") return await createChore(req, res, db, broadcast);
+      if (req.method === "POST" && path === "/api/push-test") return await pushTest(res, send, session.userId);
+      if (req.method === "POST" && path === "/api/chores") return await createChore(req, res, db, broadcast, session.userId, notify);
       if (req.method === "PATCH" && /^\/api\/chores\/\d+$/.test(path)) {
-        return await editChore(req, res, db, Number(path.split("/").pop()), broadcast);
+        return await editChore(req, res, db, Number(path.split("/").pop()), broadcast, session.userId, notify);
       }
       if (req.method === "DELETE" && /^\/api\/chores\/\d+$/.test(path)) {
-        return deleteChore(res, db, Number(path.split("/").pop()), broadcast);
+        return deleteChore(res, db, Number(path.split("/").pop()), broadcast, session.userId, notify);
       }
       if (req.method === "POST" && /^\/api\/chores\/\d+\/complete$/.test(path)) {
-        return await completeChore(req, res, db, Number(path.split("/")[3]), session.userId, broadcast, timeZone, clock);
+        return await completeChore(req, res, db, Number(path.split("/")[3]), session.userId, broadcast, timeZone, clock, notify);
+      }
+      if (req.method === "POST" && /^\/api\/history\/\d+\/undo$/.test(path)) {
+        await readJson(req);
+        return await undoCompletion(res, db, Number(path.split("/")[3]), session.userId, broadcast, clock, notify);
       }
       if (req.method === "PATCH" && path === "/api/settings") return await updateSettings(req, res, db, session.userId, broadcast);
       if (req.method === "PATCH" && path === "/api/password") return await changePassword(req, res, db, session, clients);
-      if (req.method === "PUT" && path === "/api/push-subscriptions") return await putSubscription(req, res, db, session.userId);
+      if (req.method === "PUT" && path === "/api/push-subscriptions") return await putSubscription(req, res, db, session);
       if (req.method === "DELETE" && path === "/api/push-subscriptions") return await removeSubscription(req, res, db, session.userId);
-      if (req.method === "GET") return await staticFile(path, res);
+      if (req.method === "GET") throw notFound();
       return json(res, 404, { error: "Not found" });
     } catch (error) {
       const status = error.status || 400;
@@ -100,6 +121,7 @@ export async function createApp(options = {}) {
 
   server.on("close", () => {
     scheduler.stop();
+    clearInterval(cleanupTimer);
     for (const res of clients.keys()) res.end();
     clients.clear();
     db.close();
@@ -107,7 +129,7 @@ export async function createApp(options = {}) {
   return { server, db, scheduler };
 }
 
-async function login(req, res, db, localInsecure) {
+async function login(req, res, db, localInsecure, throttle) {
   const body = await readJson(req);
   if (!isRecord(body) || !["D", "M"].includes(body.userId) || typeof body.password !== "string"
     || body.password.length > 200) throw bad("Invalid credentials");
@@ -125,7 +147,7 @@ async function login(req, res, db, localInsecure) {
   throttle.delete(key);
   const session = newSession();
   const now = new Date();
-  db.prepare("DELETE FROM sessions WHERE expires_at<=?").run(now.toISOString());
+  purgeExpiredSessions(db, now.toISOString());
   db.prepare("INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES (?,?,?,?)")
     .run(session.hash, body.userId, new Date(now.getTime() + SESSION_MS).toISOString(), now.toISOString());
   res.setHeader("Set-Cookie", sessionCookie(session.token, !localInsecure));
@@ -133,15 +155,16 @@ async function login(req, res, db, localInsecure) {
 }
 
 function authenticate(req, db) {
+  purgeExpiredSessions(db);
   const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   if (!token || token.length > 256) return null;
   const hash = tokenHash(token);
-  const row = db.prepare("SELECT user_id FROM sessions WHERE token_hash=? AND expires_at>? ")
+  const row = db.prepare("SELECT user_id,expires_at FROM sessions WHERE token_hash=? AND expires_at>? ")
     .get(hash, new Date().toISOString());
-  return row ? { userId: row.user_id, tokenHash: hash } : null;
+  return row ? { userId: row.user_id, tokenHash: hash, expiresAt: row.expires_at } : null;
 }
 
-async function createChore(req, res, db, changed) {
+async function createChore(req, res, db, changed, userId, notify) {
   const chore = validatedChore(await readJson(req));
   const now = new Date().toISOString();
   const result = db.prepare(`INSERT INTO chores(title,assignee_id,schedule_kind,schedule_interval,next_due,anchor_date,
@@ -149,11 +172,12 @@ async function createChore(req, res, db, changed) {
     .run(chore.title, chore.assigneeId, chore.schedule_kind, chore.schedule_interval, chore.next_due, chore.anchor_date,
       chore.weekdays_mask, chore.month_day, chore.reminderMode, chore.reminderTime, now, now);
   changed();
+  await notify(userId, "Chore added", `${userName(userId)} added ${chore.title} for ${userName(chore.assigneeId)}.`, `create:${result.lastInsertRowid}`);
   return json(res, 201, { id: Number(result.lastInsertRowid) });
 }
 
-async function editChore(req, res, db, id, changed) {
-  const current = db.prepare("SELECT revision FROM chores WHERE id=?").get(id);
+async function editChore(req, res, db, id, changed, userId, notify) {
+  const current = db.prepare("SELECT * FROM chores WHERE id=?").get(id);
   if (!current) throw notFound();
   const body = await readJson(req);
   const chore = validatedChore(body);
@@ -168,16 +192,22 @@ async function editChore(req, res, db, id, changed) {
       ...(hasRevision ? [body.revision] : []));
   if (!result.changes) throw conflict();
   changed();
+  if (choreChanged(current, chore)) {
+    const action = current.assignee_id !== chore.assigneeId ? `assigned ${chore.title} to ${userName(chore.assigneeId)}` : `updated ${chore.title}`;
+    await notify(userId, "Chore updated", `${userName(userId)} ${action}.`, `edit:${id}:${current.revision}`);
+  }
   return noContent(res);
 }
 
-function deleteChore(res, db, id, changed) {
-  if (!db.prepare("DELETE FROM chores WHERE id=?").run(id).changes) throw notFound();
+async function deleteChore(res, db, id, changed, userId, notify) {
+  const current = db.prepare("SELECT title FROM chores WHERE id=?").get(id);
+  if (!current || !db.prepare("DELETE FROM chores WHERE id=?").run(id).changes) throw notFound();
   changed();
+  await notify(userId, "Chore removed", `${userName(userId)} removed ${current.title}.`, `delete:${id}`);
   return noContent(res);
 }
 
-async function completeChore(req, res, db, id, userId, changed, timeZone, now) {
+async function completeChore(req, res, db, id, userId, changed, timeZone, now, notify) {
   const body = await readJson(req);
   if (!isRecord(body) || !Number.isInteger(body.revision) || body.revision < 1) throw bad("Revision is required");
   const outcome = transaction(db, () => {
@@ -186,14 +216,15 @@ async function completeChore(req, res, db, id, userId, changed, timeZone, now) {
     const chore = db.prepare("SELECT * FROM chores WHERE id=?").get(id);
     if (!chore) throw notFound();
     if (chore.revision !== body.revision) throw conflict();
-    db.prepare(`INSERT INTO completion_history
-      (chore_id,title,assignee_id,completed_by_id,due_date,schedule_kind,completed_at,completed_on)
-      VALUES (?,?,?,?,?,?,?,?)`)
-      .run(id, chore.title, chore.assignee_id, userId, chore.next_due, chore.schedule_kind, completedAt, completedOn);
+    const recordCompletion = () => Number(db.prepare(`INSERT INTO completion_history
+      (chore_id,title,assignee_id,completed_by_id,due_date,schedule_kind,completed_at,completed_on,undo_snapshot,undo_revision)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      .run(id, chore.title, chore.assignee_id, userId, chore.next_due, chore.schedule_kind, completedAt, completedOn,
+        JSON.stringify(chore), chore.revision + 1).lastInsertRowid);
     if (chore.schedule_kind === "once") {
       const result = db.prepare("DELETE FROM chores WHERE id=? AND revision=?").run(id, body.revision);
       if (!result.changes) throw conflict();
-      return { removed: true };
+      return { removed: true, title: chore.title, completionId: recordCompletion() };
     }
     const effective = chore.next_due < completedOn
       ? shiftSeries(chore, daysBetween(chore.next_due, completedOn))
@@ -204,26 +235,53 @@ async function completeChore(req, res, db, id, userId, changed, timeZone, now) {
       .run(nextDue, completedAt, userId, effective.anchor_date, effective.weekdays_mask, effective.month_day,
         completedAt, id, body.revision);
     if (!result.changes) throw conflict();
-    return { nextDue };
+    return { nextDue, title: chore.title, completionId: recordCompletion() };
   });
   changed();
+  await notify(userId, "Chore completed", `${userName(userId)} completed ${outcome.title || "a chore"}.`, `complete:${id}:${body.revision}`);
+  delete outcome.title;
   return json(res, 200, outcome);
+}
+
+async function undoCompletion(res, db, id, userId, changed, now, notify) {
+  const title = transaction(db, () => {
+    const record = db.prepare(`SELECT * FROM completion_history WHERE id=? AND (${CAN_UNDO})`).get(id);
+    if (!record) throw Object.assign(new Error("This completion can no longer be undone. Refresh the list."), { status: 409 });
+    const chore = JSON.parse(record.undo_snapshot);
+    chore.revision = record.undo_revision + 1;
+    chore.updated_at = now().toISOString();
+    const columns = db.prepare("PRAGMA table_info(chores)").all().map(({ name }) => name);
+    if (record.schedule_kind === "once") {
+      db.prepare(`INSERT INTO chores (${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")})`).run(...columns.map((column) => chore[column]));
+    } else {
+      const fields = columns.filter((column) => column !== "id");
+      const result = db.prepare(`UPDATE chores SET ${fields.map((column) => `${column}=?`).join(",")} WHERE id=? AND revision=?`)
+        .run(...fields.map((column) => chore[column]), record.chore_id, record.undo_revision);
+      if (!result.changes) throw conflict();
+    }
+    db.prepare("DELETE FROM completion_history WHERE id=?").run(id);
+    return record.title;
+  });
+  changed();
+  await notify(userId, "Completion undone", `${userName(userId)} marked ${title} as unfinished.`, `undo:${id}`);
+  return noContent(res);
 }
 
 async function updateSettings(req, res, db, userId, changed) {
   const body = await readJson(req);
   if (!isRecord(body)) throw bad("Settings must be an object");
   const keys = ["digestTime", "missedAlertTime", "defaultReminderTime"];
-  if (!keys.some((key) => Object.prototype.hasOwnProperty.call(body, key))) throw bad("No settings supplied");
-  const current = db.prepare("SELECT digest_time,missed_alert_time,default_reminder_time FROM users WHERE id=?").get(userId);
+  if (!keys.some((key) => Object.prototype.hasOwnProperty.call(body, key)) && !Object.prototype.hasOwnProperty.call(body, "activityNotifications")) throw bad("No settings supplied");
+  if (Object.prototype.hasOwnProperty.call(body, "activityNotifications") && typeof body.activityNotifications !== "boolean") throw bad("Activity notification preference must be true or false");
+  const current = db.prepare("SELECT digest_time,missed_alert_time,default_reminder_time,activity_notifications FROM users WHERE id=?").get(userId);
   const currentValues = [current.digest_time, current.missed_alert_time, current.default_reminder_time];
   const values = keys.map((key, index) => {
     if (!Object.prototype.hasOwnProperty.call(body, key)) return currentValues[index];
     if (body[key] !== null && (typeof body[key] !== "string" || !TIME.test(body[key]))) throw bad("Times must use HH:MM");
     return body[key];
   });
-  db.prepare(`UPDATE users SET digest_time=?,missed_alert_time=?,default_reminder_time=?,updated_at=? WHERE id=?`)
-    .run(...values, new Date().toISOString(), userId);
+  db.prepare(`UPDATE users SET digest_time=?,missed_alert_time=?,default_reminder_time=?,activity_notifications=?,updated_at=? WHERE id=?`)
+    .run(...values, Object.prototype.hasOwnProperty.call(body, "activityNotifications") ? Number(body.activityNotifications) : current.activity_notifications, new Date().toISOString(), userId);
   changed(userId);
   return noContent(res);
 }
@@ -242,21 +300,24 @@ async function changePassword(req, res, db, session, clients) {
     db.prepare("UPDATE users SET password_salt=?,password_hash=?,updated_at=? WHERE id=?")
       .run(next.salt, next.hash, new Date().toISOString(), session.userId);
     db.prepare("DELETE FROM sessions WHERE user_id=? AND token_hash<>?").run(session.userId, session.tokenHash);
+    db.prepare("DELETE FROM push_subscriptions WHERE user_id=? AND session_hash<>?").run(session.userId, session.tokenHash);
   });
   closeStreams(clients, (client) => client.userId === session.userId && client.tokenHash !== session.tokenHash);
   return noContent(res);
 }
 
-async function putSubscription(req, res, db, userId) {
+async function putSubscription(req, res, db, session) {
   const body = await readJson(req);
   const endpoint = body?.endpoint;
   const p256dh = body?.keys?.p256dh;
   const auth = body?.keys?.auth;
   if (!validEndpoint(endpoint) || !validKey(p256dh, 65) || !validKey(auth, 16)) throw bad("Invalid push subscription");
+  const existing = db.prepare("SELECT user_id FROM push_subscriptions WHERE endpoint=?").get(endpoint);
+  if (existing && existing.user_id !== session.userId) throw conflict();
   const now = new Date().toISOString();
-  db.prepare(`INSERT INTO push_subscriptions(endpoint,user_id,p256dh,auth,created_at,updated_at) VALUES (?,?,?,?,?,?)
-    ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id,p256dh=excluded.p256dh,auth=excluded.auth,updated_at=excluded.updated_at`)
-    .run(endpoint, userId, p256dh, auth, now, now);
+  db.prepare(`INSERT INTO push_subscriptions(endpoint,user_id,session_hash,p256dh,auth,created_at,updated_at) VALUES (?,?,?,?,?,?,?)
+    ON CONFLICT(endpoint) DO UPDATE SET session_hash=excluded.session_hash,p256dh=excluded.p256dh,auth=excluded.auth,updated_at=excluded.updated_at`)
+    .run(endpoint, session.userId, session.tokenHash, p256dh, auth, now, now);
   return noContent(res);
 }
 
@@ -265,6 +326,36 @@ async function removeSubscription(req, res, db, userId) {
   if (!validEndpoint(endpoint)) throw bad("Endpoint is required");
   db.prepare("DELETE FROM push_subscriptions WHERE endpoint=? AND user_id=?").run(endpoint, userId);
   return noContent(res);
+}
+
+async function pushTest(res, send, userId) {
+  const sent = await send(userId, "Two of Us", "Push notifications are working on this device.", { url: "/app", tag: "two-of-us-test" });
+  if (!sent) throw Object.assign(new Error("Enable push on this device first"), { status: 409 });
+  return noContent(res);
+}
+
+async function activityNotification(db, send, actorId, title, body, key) {
+  const userId = actorId === "D" ? "M" : "D";
+  const enabled = db.prepare("SELECT activity_notifications FROM users WHERE id=?").get(userId)?.activity_notifications;
+  // The database change is already committed; notification failure must not report a failed write.
+  if (enabled) {
+    try { await send(userId, title, body, { url: "/app", tag: `activity-${key}`, dedupeKey: `activity:${key}` }); }
+    catch (error) { console.error("activity notification", error); }
+  }
+}
+
+function choreChanged(current, chore) {
+  return current.title !== chore.title || current.assignee_id !== chore.assigneeId || current.schedule_kind !== chore.schedule_kind
+    || current.schedule_interval !== chore.schedule_interval || current.next_due !== chore.next_due || current.anchor_date !== chore.anchor_date
+    || current.weekdays_mask !== chore.weekdays_mask || current.month_day !== chore.month_day || current.reminder_mode !== chore.reminderMode
+    || current.reminder_time !== chore.reminderTime;
+}
+
+function userName(userId) { return userId === "D" ? "Dylan" : "Mady"; }
+
+function purgeExpiredSessions(db, now = new Date().toISOString()) {
+  db.prepare("DELETE FROM push_subscriptions WHERE session_hash IN (SELECT token_hash FROM sessions WHERE expires_at<=?)").run(now);
+  db.prepare("DELETE FROM sessions WHERE expires_at<=?").run(now);
 }
 
 function validatedChore(body) {
@@ -331,7 +422,10 @@ function events(req, res, session, clients) {
   res.write("event: ready\ndata: {}\n\n");
   clients.set(res, session);
   const heartbeat = setInterval(() => {
-    try { if (!res.writableEnded) res.write(": keepalive\n\n"); } catch { cleanup(); }
+    try {
+      if (new Date(session.expiresAt) <= new Date()) return res.end();
+      if (!res.writableEnded) res.write(": keepalive\n\n");
+    } catch { cleanup(); }
   }, 20_000);
   const cleanup = () => { clearInterval(heartbeat); clients.delete(res); };
   req.on("close", cleanup);
@@ -346,7 +440,7 @@ function closeStreams(clients, predicate) {
   }
 }
 
-async function staticFile(pathname, res) {
+async function staticFile(pathname, res, isPublic = false) {
   let decoded;
   try { decoded = decodeURIComponent(pathname); } catch { throw notFound(); }
   const publicRoot = resolve(join(ROOT, "public"));
@@ -361,7 +455,7 @@ async function staticFile(pathname, res) {
     res.writeHead(200, {
       "Content-Type": mime(file),
       "Content-Length": data.byteLength,
-      "Cache-Control": file.endsWith("index.html") ? "no-cache" : "public, max-age=31536000, immutable",
+      "Cache-Control": "no-store",
     });
     res.end(data);
   } catch {
@@ -394,7 +488,12 @@ function within(root, file) {
 
 function validEndpoint(value) {
   if (typeof value !== "string" || value.length > 2048) return false;
-  try { return new URL(value).protocol === "https:"; } catch { return false; }
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    return url.protocol === "https:" && !url.username && !url.password
+      && (host === "fcm.googleapis.com" || host === "updates.push.services.mozilla.com" || host === "push.services.mozilla.com" || host.endsWith(".push.apple.com"));
+  } catch { return false; }
 }
 
 function validKey(value, bytes) {
@@ -415,6 +514,7 @@ function json(res, status, value) {
   res.end(JSON.stringify(value));
 }
 
+function redirect(res, location) { res.writeHead(302, { Location: location, "Cache-Control": "no-store" }); res.end(); }
 function noContent(res) { res.writeHead(204); res.end(); }
 function bad(message) { return Object.assign(new Error(message), { status: 400 }); }
 function conflict() { return Object.assign(new Error("This chore changed on another device"), { status: 409 }); }
@@ -427,6 +527,7 @@ function mime(file) {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".js": "text/javascript; charset=utf-8",
+    ".png": "image/png",
     ".svg": "image/svg+xml",
     ".webmanifest": "application/manifest+json; charset=utf-8",
   })[extname(file).toLowerCase()] || "application/octet-stream";
@@ -435,5 +536,6 @@ function mime(file) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { server } = await createApp();
   const port = Number(process.env.PORT || 3000);
-  server.listen(port, "0.0.0.0", () => console.log(`Two of Us listening on ${port}`));
+  const host = process.env.LISTEN_HOST || "0.0.0.0";
+  server.listen(port, host, () => console.log(`Two of Us listening on ${host}:${server.address().port}`));
 }

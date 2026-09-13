@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "core_version": "3.0.0",
+  "adoption_status": "CONFIGURED",
+  "repository": {
+    "identity": "two-of-us-chores",
+    "inspected_ref": "main@9f7ac42e3289568782d1978e66d70cb6b0d5219e with pre-existing uncommitted product changes preserved",
+    "source_roots": [
+      "src",
+      "public"
+    ],
+    "test_roots": [
+      "test"
+    ],
+    "instruction_paths": [
+      "AGENTS.md"
+    ],
+    "strategy_path": "EXECUTION_STRATEGY.md",
+    "canonical_task_record": null,
+    "canonical_evidence_record": null,
+    "architecture_invariants": [
+      "The application remains a single Node service backed by SQLite unless an approved product change says otherwise.",
+      "Application data and authenticated application assets remain protected by the server session boundary; only the login/bootstrap surface is public.",
+      "Web Push and service-worker deployment use the exact HTTPS APP_ORIGIN outside explicitly allowed localhost development."
+    ],
+    "protected_paths": [],
+    "generated_paths": []
+  },
+  "execution": {
+    "mode": "single",
+    "primary_agent": "current_agent",
+    "delegation": {
+      "enabled": false,
+      "supported_tools": [],
+      "max_helpers": 0,
+      "recursive": false,
+      "isolation": "disjoint_files_or_worktrees",
+      "integration_owner": "primary_agent"
+    },
+    "repair_replan_after": 2
+  },
+  "review": {
+    "task": "self_review",
+    "milestone": "self_review_plus_declared_runtime_checks",
+    "independent_required": false,
+    "independent_requirement_source": null,
+    "no_independence_claim_from_self_review": true
+  },
+  "permissions": {
+    "inherit_existing_authorizations": true,
+    "allowed_local_operations": [
+      "repository_scoped_edits",
+      "read_only_repository_inspection",
+      "repository_test_commands",
+      "local_builds_that_do_not_publish_or_modify_live_services"
+    ],
+    "requires_explicit_authorization": [
+      "global_install_or_upgrade",
+      "provider_credentials_or_agent_hooks",
+      "unapproved_external_semantic_extraction",
+      "interactive_game_or_device_control",
+      "live_service_or_production_data_changes",
+      "push_merge_publish",
+      "paid_or_background_services"
+    ],
+    "prohibited_operations": []
+  },
+  "environments": [
+    {
+      "id": "local-dev",
+      "description": "Linux development checkout; Python 3.14.7, Node 24.21.0, pnpm 11.19.0. Node satisfies the application's >=24 <25 engine range. Deployment instructions pin pnpm 11.16.0.",
+      "availability": "AVAILABLE"
+    },
+    {
+      "id": "docker-local",
+      "description": "Local Docker/Compose environment used for deployment configuration and image build checks.",
+      "availability": "UNAVAILABLE"
+    },
+    {
+      "id": "deployed-pwa",
+      "description": "Target HTTPS deployment on Proxmox plus supported desktop/mobile browsers for PWA, push and persistence observations.",
+      "availability": "UNVERIFIED"
+    }
+  ],
+  "skills": [
+    {
+      "name": "old-coder",
+      "definition_status": "AVAILABLE",
+      "entry_reference": "native-skill:old-coder",
+      "actual_revision": "sha256:839a3a2a09708f7be5cd56287c6d076412413467cc63560185a4beb41377ef19",
+      "runtime_status": "NOT_REQUIRED",
+      "fallback": "Use the bundled Old Coder-informed proportional verification policy if the native definition is unavailable in another host."
+    },
+    {
+      "name": "ponytail",
+      "definition_status": "AVAILABLE",
+      "entry_reference": "native-skill:ponytail",
+      "actual_revision": "sha256:1316a2f3f95741d2300b116fe0c2d81ce4a9568656ed0a62643f54aaf09957f2",
+      "runtime_status": "NOT_REQUIRED",
+      "fallback": "Use the bundled minimal-correct-implementation policy if the native definition is unavailable in another host."
+    },
+    {
+      "name": "graphify",
+      "definition_status": "AVAILABLE",
+      "entry_reference": "native-skill:graphify",
+      "actual_revision": "skill-sha256:3898b1042721cad27d6f87ca44f638415a7f763203aefd86b90f9358ffea3a43; cli:0.9.58",
+      "runtime_status": "AVAILABLE",
+      "fallback": "Use targeted source/caller/import inspection and label Graphify unavailable/degraded when a usable graph cannot be produced."
+    }
+  ],
+  "graph": {
+    "authority": "advisory",
+    "location": null,
+    "mode": "structural_or_current_agent_only",
+    "external_semantic_calls": false,
+    "background_watch": false,
+    "automatic_hooks": false,
+    "refresh_policy": "material_topology_change_or_milestone"
+  },
+  "sensors": [
+    {
+      "id": "workflow-validate",
+      "kind": "workflow",
+      "binding_type": "command",
+      "binding_reference": ".agents/workflow/tools/validate_workflow.py",
+      "command": [
+        "python3",
+        ".agents/workflow/tools/validate_workflow.py",
+        "--root",
+        "."
+      ],
+      "cwd": ".",
+      "environment": "local-dev",
+      "owner": "agent",
+      "effects": "local_check",
+      "measures": "Workflow schema, references, mode consistency and configured binding structure.",
+      "pass_condition": "Validator exits 0 and reports the workflow configuration structurally valid.",
+      "limitations": "Does not execute product sensors, validate product behavior, or create independent review.",
+      "prerequisites": [
+        "Python 3.10 or newer"
+      ],
+      "availability": "AVAILABLE",
+      "evidence_output": ".agents/workflow/ADOPTION_REPORT.md"
+    },
+    {
+      "id": "product-tests",
+      "kind": "integration",
+      "binding_type": "command",
+      "binding_reference": "package.json",
+      "command": [
+        "pnpm",
+        "test"
+      ],
+      "cwd": ".",
+      "environment": "local-dev",
+      "owner": "agent",
+      "effects": "local_check",
+      "measures": "Existing Node test suite covering backend, frontend contracts, recurrence, scheduler, push logic and HTTP integration behavior.",
+      "pass_condition": "The Node test runner executes a nonempty suite and exits 0 with zero failing tests.",
+      "limitations": "Node 24 automated checks do not prove rendered layout, PWA installation, real push delivery, container persistence or Proxmox behavior. HTTP checks require localhost listener access.",
+      "prerequisites": [
+        "Dependencies already installed from the committed pnpm lockfile"
+      ],
+      "availability": "AVAILABLE",
+      "evidence_output": ".agents/workflow/ADOPTION_REPORT.md"
+    },
+    {
+      "id": "compose-config",
+      "kind": "static",
+      "binding_type": "command",
+      "binding_reference": "compose.yaml",
+      "command": [
+        "docker",
+        "compose",
+        "config"
+      ],
+      "cwd": ".",
+      "environment": "docker-local",
+      "owner": "agent",
+      "effects": "local_check",
+      "measures": "Docker Compose syntax and resolved service configuration.",
+      "pass_condition": "docker compose config exits 0 for the checked-in compose.yaml.",
+      "limitations": "Does not build, start or exercise the application image.",
+      "prerequisites": [
+        "Docker Engine and Compose plugin"
+      ],
+      "availability": "UNAVAILABLE",
+      "evidence_output": ".agents/workflow/ADOPTION_REPORT.md"
+    },
+    {
+      "id": "compose-build",
+      "kind": "compile",
+      "binding_type": "command",
+      "binding_reference": "Dockerfile",
+      "command": [
+        "docker",
+        "compose",
+        "build"
+      ],
+      "cwd": ".",
+      "environment": "docker-local",
+      "owner": "agent",
+      "effects": "build",
+      "measures": "Container image build, frozen dependency install and inclusion of required frontend assets.",
+      "pass_condition": "docker compose build exits 0 for the current source tree.",
+      "limitations": "A successful image build does not prove service startup, persistence, browser behavior or push delivery.",
+      "prerequisites": [
+        "Docker Engine and Compose plugin"
+      ],
+      "availability": "UNAVAILABLE",
+      "evidence_output": ".agents/workflow/ADOPTION_REPORT.md"
+    },
+    {
+      "id": "deployed-pwa-runtime",
+      "kind": "runtime",
+      "binding_type": "human",
+      "binding_reference": "README.md",
+      "cwd": ".",
+      "environment": "deployed-pwa",
+      "owner": "human",
+      "effects": "human_runtime",
+      "measures": "Real HTTPS deployment behavior across authenticated browsers, PWA installation, Web Push and persistence.",
+      "pass_condition": "All listed browser/deployment observations succeed on the same deployed candidate.",
+      "limitations": "Device/browser-specific observation; does not replace automated backend checks.",
+      "prerequisites": [
+        "HTTPS deployment on the target Proxmox environment",
+        "APP_ORIGIN matches the public origin",
+        "VAPID keys configured for push testing"
+      ],
+      "availability": "UNVERIFIED",
+      "evidence_output": ".agents/workflow/ADOPTION_REPORT.md",
+      "checklist": [
+        "In two authenticated browser sessions, create/edit/complete/delete a chore and confirm the second session updates as documented.",
+        "Install the PWA on supported desktop/mobile browsers, enable push, send a test notification and confirm notification click behavior.",
+        "Recreate the container and confirm existing chore data remains available, then verify backup/integrity/restore on a disposable or approved deployment path."
+      ]
+    }
+  ],
+  "profiles": {
+    "focused": [
+      "product-tests"
+    ],
+    "milestone": [
+      "workflow-validate",
+      "product-tests",
+      "compose-config",
+      "compose-build",
+      "deployed-pwa-runtime"
+    ]
+  },
+  "evidence": {
+    "prefer_existing_runner": true,
+    "runner_reference": null,
+    "record_location": ".agents/workflow/ADOPTION_REPORT.md",
+    "candidate_identity": "use_repo_commit_diff_and_relevant_artifact_identity",
+    "no_automatic_acceptance": true
+  },
+  "readiness": {
+    "bindings": "PASS",
+    "representative_repo_check": "FAIL",
+    "skill_definitions": "PASS",
+    "host_entry_point": "PASS",
+    "blockers": [
+      "The representative pnpm test run did not pass: 5 test files passed and 3 failed on this host.",
+      "backend.test.mjs and integration.test.mjs require localhost listeners, which this managed sandbox rejects with listen EPERM before their HTTP assertions can run.",
+      "backup.test.mjs reaches an assertion failure on this host because the spawned backup CLI returns empty captured stdout where the test expects backup.db; this remains a product/toolchain result to recheck under supported Node 24.x.",
+      "Docker/Compose checks are unavailable on this workstation.",
+      "Use Node 24.x; localhost HTTP checks require an environment permitting listeners.",
+      "Real deployed PWA/Web Push/Proxmox observations remain pending until a deployed candidate is tested."
+    ],
+    "evidence_references": [
+      ".agents/workflow/ADOPTION_REPORT.md"
+    ]
+  }
+}

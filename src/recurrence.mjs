@@ -1,39 +1,9 @@
+import { addDays, daysBetween, formatDate, parseDate, weekStart } from "../public/calendar-recurrence.js";
+
 const DAY_MS = 86_400_000;
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const KINDS = new Map([
-  ["once", "once"],
-  ["daily", "daily"],
-  ["every", "every"],
-  ["every-n", "every"],
-  ["every_n", "every"],
-  ["everyN", "every"],
-  ["interval", "every"],
-  ["weekly", "weekly"],
-  ["monthly", "monthly"],
-]);
+const KINDS = new Set(["once", "daily", "every", "weekly", "monthly"]);
 
-export function parseDate(value) {
-  if (typeof value !== "string" || !ISO_DATE.test(value)) throw new Error("Invalid date");
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  if (formatDate(date) !== value) throw new Error("Invalid date");
-  return date;
-}
-
-export function formatDate(date) {
-  return date.toISOString().slice(0, 10);
-}
-
-export function addDays(value, days) {
-  const date = parseDate(value);
-  if (!Number.isInteger(days)) throw new Error("Invalid day interval");
-  date.setUTCDate(date.getUTCDate() + days);
-  return formatDate(date);
-}
-
-export function daysBetween(from, to) {
-  return Math.round((parseDate(to) - parseDate(from)) / DAY_MS);
-}
+export { addDays, daysBetween };
 
 export function weekdayBit(value) {
   return 1 << parseDate(value).getUTCDay();
@@ -68,12 +38,6 @@ export function shiftSeries(chore, days) {
   return shifted;
 }
 
-function weekStart(value) {
-  const date = typeof value === "string" ? parseDate(value) : new Date(value);
-  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
-  return date;
-}
-
 export function nextOccurrence(chore) {
   const interval = Math.max(1, chore.schedule_interval || 1);
   if (chore.schedule_kind === "once") return null;
@@ -103,8 +67,8 @@ export function nextOccurrence(chore) {
 }
 
 export function normalizeSchedule(input = {}) {
-  const kind = KINDS.get(input.kind);
-  if (!kind) throw new Error("Choose a valid schedule");
+  const kind = input.kind;
+  if (!KINDS.has(kind)) throw new Error("Choose a valid schedule");
   const interval = kind === "once" ? 1 : Number(input.interval ?? 1);
   if (!Number.isInteger(interval) || interval < 1 || interval > 365) {
     throw new Error("Interval must be between 1 and 365");

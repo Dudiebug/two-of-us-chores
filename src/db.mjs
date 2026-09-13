@@ -3,7 +3,13 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { passwordHash } from "./security.mjs";
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 5;
+
+// The same eligibility rule serves the UI and the transactional undo guard.
+export const CAN_UNDO = `undo_snapshot IS NOT NULL AND (
+  (schedule_kind='once' AND NOT EXISTS (SELECT 1 FROM chores WHERE id=chore_id)) OR
+  (schedule_kind!='once' AND EXISTS (SELECT 1 FROM chores WHERE id=chore_id AND revision=undo_revision))
+)`;
 
 export async function openDatabase(path, passwords = {}) {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
@@ -30,6 +36,7 @@ function ensureSchema(db, includeChores = true) {
       digest_time TEXT,
       missed_alert_time TEXT,
       default_reminder_time TEXT,
+      activity_notifications INTEGER NOT NULL DEFAULT 1 CHECK(activity_notifications IN (0,1)),
       updated_at TEXT NOT NULL
     ) STRICT;
     CREATE TABLE IF NOT EXISTS sessions (
@@ -41,6 +48,7 @@ function ensureSchema(db, includeChores = true) {
     CREATE TABLE IF NOT EXISTS push_subscriptions (
       endpoint TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      session_hash TEXT,
       p256dh TEXT NOT NULL,
       auth TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -51,6 +59,9 @@ function ensureSchema(db, includeChores = true) {
       sent_at TEXT NOT NULL
     ) STRICT;
   `);
+  ensureColumn(db, "users", "activity_notifications", "INTEGER NOT NULL DEFAULT 1 CHECK(activity_notifications IN (0,1))");
+  ensureColumn(db, "push_subscriptions", "session_hash", "TEXT");
+  db.exec("DELETE FROM push_subscriptions WHERE session_hash IS NULL");
 
   if (!includeChores) return;
 
@@ -58,6 +69,31 @@ function ensureSchema(db, includeChores = true) {
   if (existing && !String(existing.sql).includes("'every'")) migrateChores(db);
   else createChoresTable(db);
   createCompletionHistoryTable(db);
+  transaction(db, () => {
+    ensureColumn(db, "completion_history", "undo_snapshot", "TEXT");
+    ensureColumn(db, "completion_history", "undo_revision", "INTEGER");
+    for (const [table, create] of [["chores", createChoresTable], ["completion_history", createCompletionHistoryTable]]) {
+      const sql = db.prepare("SELECT sql FROM sqlite_master WHERE name=?").get(table).sql;
+      if (sql.includes("AUTOINCREMENT")) continue;
+      db.exec(`ALTER TABLE ${table} RENAME TO ${table}_before_v5`);
+      create(db);
+      db.exec(`INSERT INTO ${table} SELECT * FROM ${table}_before_v5; DROP TABLE ${table}_before_v5`);
+    }
+    // Completed one-time chores may have higher IDs than any remaining live row.
+    const maximum = db.prepare("SELECT MAX(id) AS id FROM (SELECT id FROM chores UNION ALL SELECT chore_id AS id FROM completion_history)").get().id || 0;
+    if (!db.prepare("SELECT 1 FROM sqlite_sequence WHERE name='chores'").get()) {
+      db.prepare("INSERT INTO sqlite_sequence(name,seq) VALUES ('chores',?)").run(maximum);
+    } else db.prepare("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='chores'").run(maximum);
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS history_chore ON completion_history(chore_id);
+      CREATE TRIGGER IF NOT EXISTS invalidate_undo_update AFTER UPDATE ON chores BEGIN
+        UPDATE completion_history SET undo_snapshot=NULL,undo_revision=NULL WHERE chore_id=OLD.id;
+      END;
+      CREATE TRIGGER IF NOT EXISTS invalidate_undo_delete AFTER DELETE ON chores BEGIN
+        UPDATE completion_history SET undo_snapshot=NULL,undo_revision=NULL WHERE chore_id=OLD.id;
+      END;
+    `);
+  });
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
@@ -67,10 +103,14 @@ function ensureSchema(db, includeChores = true) {
   `);
 }
 
+function ensureColumn(db, table, column, definition) {
+  if (!db.prepare(`SELECT 1 FROM pragma_table_info(?) WHERE name=?`).get(table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
 function createChoresTable(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS chores (
-      id INTEGER PRIMARY KEY,
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 120),
       assignee_id TEXT NOT NULL REFERENCES users(id),
       schedule_kind TEXT NOT NULL CHECK(schedule_kind IN ('once','daily','every','weekly','monthly')),
@@ -94,7 +134,7 @@ function createChoresTable(db) {
 function createCompletionHistoryTable(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS completion_history (
-      id INTEGER PRIMARY KEY,
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
       chore_id INTEGER NOT NULL,
       title TEXT NOT NULL,
       assignee_id TEXT NOT NULL REFERENCES users(id),
@@ -102,7 +142,9 @@ function createCompletionHistoryTable(db) {
       due_date TEXT NOT NULL,
       schedule_kind TEXT NOT NULL CHECK(schedule_kind IN ('once','daily','every','weekly','monthly')),
       completed_at TEXT NOT NULL,
-      completed_on TEXT NOT NULL
+      completed_on TEXT NOT NULL,
+      undo_snapshot TEXT,
+      undo_revision INTEGER
     ) STRICT;
   `);
 }
@@ -154,7 +196,7 @@ export function transaction(db, fn) {
 
 export function publicState(db, userId, household = {}) {
   const user = db.prepare(`SELECT id,name,initial,digest_time AS digestTime,
-    missed_alert_time AS missedAlertTime,default_reminder_time AS defaultReminderTime
+    missed_alert_time AS missedAlertTime,default_reminder_time AS defaultReminderTime,activity_notifications AS activityNotifications
     FROM users WHERE id=?`).get(userId);
   const chores = db.prepare(`SELECT id,title,assignee_id AS assigneeId,schedule_kind AS scheduleKind,
     schedule_interval AS scheduleInterval,next_due AS nextDue,anchor_date AS anchorDate,
@@ -164,8 +206,8 @@ export function publicState(db, userId, household = {}) {
     FROM chores ORDER BY next_due,id`).all();
   const history = db.prepare(`SELECT id,chore_id AS choreId,title,assignee_id AS assigneeId,
     completed_by_id AS completedById,due_date AS dueDate,schedule_kind AS scheduleKind,
-    completed_at AS completedAt,completed_on AS completedOn
-    FROM completion_history ORDER BY completed_at DESC,id DESC`).all();
+    completed_at AS completedAt,completed_on AS completedOn,(${CAN_UNDO}) AS canUndo
+    FROM completion_history ORDER BY completed_at DESC,id DESC`).all().map((row) => ({ ...row, canUndo: Boolean(row.canUndo) }));
   return {
     user,
     users: [{ id: "D", name: "Dylan", initial: "D" }, { id: "M", name: "Mady", initial: "M" }],

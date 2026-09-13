@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -15,8 +14,7 @@ let events;
 
 before(async () => {
   dataDir = await mkdtemp(join(tmpdir(), "two-of-us-integration-"));
-  const port = await freePort();
-  origin = `http://127.0.0.1:${port}`;
+  origin = "http://localhost:3000";
   app = await createApp({
     env: {
       APP_ORIGIN: origin,
@@ -31,9 +29,9 @@ before(async () => {
   });
   await new Promise((resolve, reject) => {
     app.server.once("error", reject);
-    app.server.listen(port, "127.0.0.1", resolve);
+    app.server.listen(0, "127.0.0.1", resolve);
   });
-  base = origin;
+  base = `http://127.0.0.1:${app.server.address().port}`;
 });
 
 after(async () => {
@@ -145,7 +143,7 @@ test("two authenticated sessions synchronize and enforce mutation safety", async
     body: { revision: oneTimeChore.revision },
   });
   assert.equal(oneTimeComplete.status, 200);
-  assert.deepEqual(oneTimeComplete.body, { removed: true });
+  assert.deepEqual(oneTimeComplete.body, { removed: true, completionId: 2 });
   await events.nextChange();
   const afterOneTime = await api("/api/state", { cookie: madyCookie });
   assert.equal(afterOneTime.body.chores.some(({ id }) => id === oneTime.body.id), false);
@@ -160,8 +158,15 @@ test("two authenticated sessions synchronize and enforce mutation safety", async
     scheduleKind: "once",
     completedAt: "2024-06-04T17:00:00.000Z",
     completedOn: "2024-06-04",
+    canUndo: true,
   });
   assert.equal(afterOneTime.body.history[1].choreId, id);
+
+  assert.equal((await api(`/api/history/${oneTimeComplete.body.completionId}/undo`, { method: "POST", cookie: dylanCookie, body: {} })).status, 204);
+  await events.nextChange();
+  const undone = await api("/api/state", { cookie: madyCookie });
+  assert.equal(undone.body.history.length, 1);
+  assert.equal(undone.body.chores.some((chore) => chore.id === oneTime.body.id), true);
 
   const removed = await api(`/api/chores/${id}`, { method: "DELETE", cookie: dylanCookie });
   assert.equal(removed.status, 204);
@@ -224,15 +229,4 @@ async function openEvents(cookie) {
     },
     async close() { await reader.cancel(); },
   };
-}
-
-async function freePort() {
-  const probe = createServer();
-  await new Promise((resolve, reject) => {
-    probe.once("error", reject);
-    probe.listen(0, "127.0.0.1", resolve);
-  });
-  const { port } = probe.address();
-  await new Promise((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()));
-  return port;
 }

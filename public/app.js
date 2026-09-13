@@ -17,17 +17,22 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     eventSource: null,
     lastUpdated: null,
     installPrompt: null,
-    householdTimezone: "America/Chicago",
+    householdTimezone: "America/Los_Angeles",
     today: null,
     view: "today",
-    calendarMonth: null,
+    calendarDate: null,
+    calendarDays: 14,
     theme: "system",
   };
   let savedFocus = null;
   let pendingDeleteId = null;
   let toastTimer = 0;
+  let toastRemaining = 0;
+  let toastStarted = 0;
+  let toastCompletionId = null;
+  const pendingWrites = new Set();
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const themes = new Set(["system", "light", "dark", "blush", "lavender", "mint", "sunshine", "flowers", "meadow-notes", "tidepool", "midnight-plum", "apricot", "forest-night", "sky-notebook", "pistachio", "lemonade"]);
+  const themes = new Set(["system", "light", "dark", "blush"]);
 
   function applyTheme(value, { save = true } = {}) {
     const theme = themes.has(value) ? value : "system";
@@ -112,13 +117,38 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     return state.online && Boolean(state.user);
   }
 
-  function showToast(message, kind = "success") {
+  function pauseToast() {
+    window.clearTimeout(toastTimer);
+    if (toastStarted) toastRemaining = Math.max(0, toastRemaining - (performance.now() - toastStarted));
+    toastStarted = 0;
+  }
+
+  function resumeToast() {
     const toast = $("#toast");
-    toast.textContent = message;
+    pauseToast();
+    if (toast.hidden || toast.matches(":hover, :focus-within")) return;
+    toastStarted = performance.now();
+    toastTimer = window.setTimeout(dismissToast, toastRemaining);
+  }
+
+  function dismissToast() {
+    pauseToast();
+    if ($("#toast").contains(document.activeElement)) $(".view-tab.is-active").focus();
+    $("#toast").hidden = true;
+    toastCompletionId = null;
+  }
+
+  function showToast(message, kind = "success", completionId = null) {
+    const toast = $("#toast");
+    pauseToast();
+    $("#toastMessage").textContent = message;
+    toastCompletionId = completionId;
+    $("#toastUndo").hidden = !completionId;
+    $("#toastUndo").disabled = !canWrite();
     toast.classList.toggle("is-error", kind === "error");
     toast.hidden = false;
-    window.clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(() => { toast.hidden = true; }, 4200);
+    toastRemaining = completionId ? 10000 : 4200;
+    resumeToast();
   }
 
   async function request(path, options = {}) {
@@ -132,6 +162,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
       try { body = JSON.parse(text); } catch { body = { error: "The server returned an invalid response." }; }
     }
     if (!response.ok) {
+      if (response.status === 401) { stopEvents(); $("#appView").hidden = true; dismissToast(); location.replace("/login"); }
       const error = new Error(body?.error || `Request failed (${response.status})`);
       error.status = response.status;
       throw error;
@@ -148,9 +179,9 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     state.users = data.users || [];
     state.chores = Array.isArray(data.chores) ? data.chores : [];
     state.history = Array.isArray(data?.history) ? data.history : [];
-    state.householdTimezone = typeof data.householdTimezone === "string" && data.householdTimezone ? data.householdTimezone : "America/Chicago";
-    state.today = /^\d{4}-\d{2}-\d{2}$/.test(data.today || "") ? data.today : timezoneTodayISO(state.householdTimezone);
-    state.calendarMonth ||= `${state.today.slice(0, 7)}-01`;
+    state.householdTimezone = data.household?.timeZone || "America/Los_Angeles";
+    state.today = /^\d{4}-\d{2}-\d{2}$/.test(data.household?.today || "") ? data.household.today : timezoneTodayISO(state.householdTimezone);
+    state.calendarDate ||= state.today;
     state.error = null;
     state.loading = false;
     state.lastUpdated = new Date();
@@ -165,9 +196,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     } catch (error) {
       if (error.status === 401) {
         stopEvents();
-        state.user = null;
-        state.loading = false;
-        render();
+        location.replace("/login");
         return;
       }
       state.loading = false;
@@ -206,16 +235,22 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
 
   function updateWriteControls() {
     const disabled = !canWrite();
-    $$("#addChoreButton, #emptyAddButton, #saveChoreButton, #confirmDeleteButton, #pushButton, #logoutButton, #settingsForm button[type=submit], #passwordForm button[type=submit], [data-action=complete]").forEach((button) => {
-      button.disabled = disabled;
+    $$("#addChoreButton, #emptyAddButton, #saveChoreButton, #deleteChoreButton, #confirmDeleteButton, #logoutButton, #settingsForm button[type=submit], #passwordForm button[type=submit], [data-action=complete], [data-action=undo], [data-action=edit]").forEach((button) => {
+      button.disabled = disabled || pendingWrites.has(`${button.dataset.action}:${button.dataset.id}`);
     });
+    $("#toastUndo").disabled = disabled || pendingWrites.has(`undo:${toastCompletionId}`) || !state.history.some((record) => record.id === toastCompletionId && record.canUndo);
+    if (disabled) $$("#pushButton, #pushTestButton").forEach((button) => { button.disabled = true; });
   }
 
   function render() {
-    $("#loginView").hidden = Boolean(state.user);
-    $("#appView").hidden = !state.user;
+    const focused = document.activeElement;
     $("#offlineBanner").hidden = state.online || !state.user;
-    if (!state.user) return;
+    if (!state.user) {
+      $("#loadingState").hidden = !state.loading;
+      $("#errorState").hidden = !state.error;
+      if (state.error) $("#errorCopy").textContent = state.error;
+      return;
+    }
     updateConnection(state.online ? "Live" : "Offline");
     updateWriteControls();
     $("#loadingState").hidden = !state.loading;
@@ -232,9 +267,15 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
       if (state.view === "history") renderHistory();
       updateWriteControls();
     }
+    if (focused && !document.contains(focused)) {
+      const { action, id, calendarDate } = focused.dataset;
+      const replacement = calendarDate ? $(`[data-calendar-date="${calendarDate}"]`) : action && id ? $(`#${state.view === "today" ? "choreSections" : state.view === "calendar" ? "calendarAgenda" : "historyGroups"} [data-action="${action}"][data-id="${id}"]`) : null;
+      (replacement || $(".view-tab.is-active"))?.focus({ preventScroll: true });
+    }
   }
 
   function renderHeader() {
+    $("#appView").dataset.view = state.view;
     const due = todayChores();
     const missed = due.filter((chore) => dueGroup(chore) === "missed");
     const todayView = state.view === "today";
@@ -294,95 +335,86 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     const group = dueGroup(chore);
     const owner = ownerName(chore.assigneeId);
     const due = group === "missed" ? `Missed · ${dateLabel(chore.nextDue)}` : group === "today" ? "Due today" : `Due ${dateLabel(chore.nextDue)}`;
-    return `<article class="chore-row ${group === "missed" ? "is-missed" : ""}" data-chore-id="${Number(chore.id)}">
-      <button class="check-button" type="button" data-action="complete" data-id="${Number(chore.id)}" aria-label="Mark ${escapeHtml(chore.title)} complete"><span aria-hidden="true">✓</span></button>
-      <div class="chore-main"><h3>${escapeHtml(chore.title)}</h3><div class="chore-meta"><span class="due-label ${group === "missed" ? "is-missed" : ""}">${due}</span><span>${escapeHtml(scheduleLabel(chore))}</span></div></div>
-      <span class="owner-chip" data-owner="${escapeHtml(chore.assigneeId)}"><span aria-hidden="true">${escapeHtml(chore.assigneeId)}</span><span>${escapeHtml(owner)}</span></span>
-      <div class="card-actions"><button class="text-button" type="button" data-action="edit" data-id="${Number(chore.id)}">Edit</button><button class="text-button" type="button" data-action="delete" data-id="${Number(chore.id)}">Remove</button></div>
+    return `<article class="chore-row ${group === "missed" ? "is-missed" : ""}" data-owner="${escapeHtml(chore.assigneeId)}" data-chore-id="${Number(chore.id)}">
+      ${completionCheckbox(chore)}
+      <div class="chore-main"><h3>${escapeHtml(chore.title)}</h3><p class="assigned">Assigned to ${escapeHtml(owner)}</p><div class="chore-meta"><span class="due-label ${group === "missed" ? "is-missed" : ""}">${due}</span><span>${escapeHtml(scheduleLabel(chore))}</span></div></div>
+      <button class="text-button edit-chevron" type="button" data-action="edit" data-id="${Number(chore.id)}" aria-label="Edit ${escapeHtml(chore.title)}">›</button>
     </article>`;
   }
 
+  function completionCheckbox(chore) {
+    return `<label class="completion-control"><input class="check-button" type="checkbox" data-action="complete" data-id="${Number(chore.id)}" aria-label="Mark ${escapeHtml(chore.title)} complete"></label>`;
+  }
+
   function renderCalendar() {
-    if (!state.calendarMonth) return;
-    const [year, month] = state.calendarMonth.split("-").map(Number);
-    const first = new Date(Date.UTC(year, month - 1, 1));
-    const start = first.getUTCDay();
-    const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
-    const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
-    const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(days).padStart(2, "0")}`;
-    const cells = Math.ceil((start + days) / 7) * 7;
-    $("#calendarTitle").textContent = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric", timeZone: "UTC" }).format(first);
+    const selected = state.calendarDate || todayISO();
+    const selectedDate = dateFromISO(selected);
+    const weekStart = addDays(selected, -selectedDate.getUTCDay());
+    const end = addDays(selected, state.calendarDays - 1);
+    $("#calendarTitle").textContent = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric", timeZone: "UTC" }).format(selectedDate);
+    $("#calendarMonth").value = selected.slice(0, 7);
+    $("#calendarWeek").innerHTML = Array.from({ length: 7 }, (_, index) => {
+      const date = addDays(weekStart, index);
+      const owners = [...new Set([
+        ...filteredChores().filter((chore) => occurrencesInRange(chore, date, date).length).map((chore) => chore.assigneeId),
+        ...filteredHistory().filter((record) => record.completedOn === date).map((record) => record.assigneeId),
+      ])].sort();
+      const label = `${dateLabel(date)}${owners.length ? `; chores for ${owners.map(ownerName).join(" and ")}` : "; no chores"}`;
+      return `<button class="calendar-day-button ${date === selected ? "is-selected" : ""} ${date === todayISO() ? "is-today" : ""}" type="button" data-calendar-date="${date}" aria-label="${escapeHtml(label)}" aria-pressed="${date === selected}"><span class="day-name">${dayNames[index]}</span><span class="day-number">${dateFromISO(date).getUTCDate()}<span class="day-dots" aria-hidden="true">${owners.map((owner) => `<i data-owner="${escapeHtml(owner)}"></i>`).join("")}</span></span></button>`;
+    }).join("");
     const occurrencesByDate = new Map();
     const addOccurrence = (date, occurrence) => {
       const occurrences = occurrencesByDate.get(date) || [];
       occurrences.push(occurrence);
       occurrencesByDate.set(date, occurrences);
     };
-    filteredChores().forEach((chore) => occurrencesInRange(chore, monthStart, monthEnd).forEach((occurrenceDate) => {
+    filteredChores().forEach((chore) => occurrencesInRange(chore, selected, end).forEach((occurrenceDate) => {
       addOccurrence(occurrenceDate, { type: "active", chore, occurrenceDate });
     }));
     filteredHistory().forEach((record) => {
-      if (record.completedOn >= monthStart && record.completedOn <= monthEnd) addOccurrence(record.completedOn, { type: "completed", record });
+      if (record.completedOn >= selected && record.completedOn <= end) addOccurrence(record.completedOn, { type: "completed", record });
     });
-    occurrencesByDate.forEach((occurrences) => occurrences.sort(compareCalendarEntries));
+    occurrencesByDate.forEach((occurrences) => occurrences.sort(compareAgendaEntries));
     $("#calendarEmpty").hidden = occurrencesByDate.size > 0;
-    const dayCells = Array.from({ length: cells }, (_, index) => {
-      const day = index - start + 1;
-      if (day < 1 || day > days) return `<div class="calendar-day is-empty" role="gridcell" aria-hidden="true"></div>`;
-      const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      const chores = occurrencesByDate.get(iso) || [];
-      const label = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" }).format(dateFromISO(iso));
-      return `<div class="calendar-day ${iso === todayISO() ? "is-today" : ""}" role="gridcell" aria-label="${escapeHtml(label)}, ${chores.length} chore${chores.length === 1 ? "" : "s"}">
-        <span class="calendar-number">${day}</span>
-        <div class="calendar-events">${calendarEventsMarkup(chores)}</div>
-      </div>`;
+    const dates = Array.from({ length: state.calendarDays }, (_, index) => addDays(selected, index));
+    const groups = dates.filter((date) => date === selected || occurrencesByDate.has(date)).map((date) => {
+      const label = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" }).format(dateFromISO(date));
+      const entries = occurrencesByDate.get(date) || [];
+      return `<section class="agenda-group"><h3>${escapeHtml(date === todayISO() ? `Today · ${label}` : date === addDays(todayISO(), 1) ? `Tomorrow · ${label}` : label)}</h3>${entries.length ? entries.map(agendaEntryMarkup).join("") : "<p class=\"agenda-empty\">No chores scheduled.</p>"}</section>`;
     });
-    $("#calendarGrid").innerHTML = Array.from({ length: dayCells.length / 7 }, (_, week) => `<div class="calendar-week" role="row">${dayCells.slice(week * 7, week * 7 + 7).join("")}</div>`).join("");
+    $("#calendarAgenda").innerHTML = groups.join("");
+    $("#calendarMore").hidden = state.calendarDays >= 56;
   }
 
-  function compareCalendarEntries(a, b) {
+  function addDays(iso, amount) {
+    const date = dateFromISO(iso);
+    date.setUTCDate(date.getUTCDate() + amount);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function compareAgendaEntries(a, b) {
     const rank = (entry) => entry.type === "active" ? entry.occurrenceDate === entry.chore.nextDue ? 0 : 2 : 1;
     const title = (entry) => String(entry.type === "completed" ? entry.record.title : entry.chore.title);
     const id = (entry) => Number(entry.type === "completed" ? entry.record.id : entry.chore.id);
     return rank(a) - rank(b) || title(a).localeCompare(title(b)) || id(a) - id(b);
   }
 
-  function calendarEventsMarkup(entries) {
-    const markup = (entry) => entry.type === "completed" ? calendarCompletedMarkup(entry.record) : calendarChoreMarkup(entry.chore, entry.occurrenceDate);
-    const visible = entries.slice(0, 3).map(markup).join("");
-    const remaining = entries.slice(3);
-    return visible + (remaining.length ? `<details class="calendar-more"><summary>+${remaining.length} more</summary><div class="calendar-more-list">${remaining.map(markup).join("")}</div></details>` : "");
-  }
-
-  function calendarChoreMarkup(chore, occurrenceDate) {
+  function agendaEntryMarkup(entry) {
+    if (entry.type === "completed") return historyRecordMarkup(entry.record);
+    const { chore, occurrenceDate } = entry;
     const owner = ownerName(chore.assigneeId);
     const projected = occurrenceDate !== chore.nextDue;
     const titleText = String(chore.title ?? "Untitled chore");
     const title = escapeHtml(titleText);
     const editLabel = projected ? `Edit recurring series for ${titleText}` : `Edit ${titleText}`;
-    const removeLabel = projected ? `Remove recurring series for ${titleText}` : `Remove ${titleText}${chore.scheduleKind === "once" ? "" : " series"}`;
     const indicator = projected
       ? `<span class="calendar-repeat" role="img" aria-label="Upcoming recurring occurrence for ${title}; not directly completable">↻</span>`
-      : `<button class="calendar-check" type="button" data-action="complete" data-id="${Number(chore.id)}" aria-label="Mark ${title} complete" title="Mark complete"><span aria-hidden="true">✓</span></button>`;
-    return `<div class="calendar-chore ${projected ? "is-projected" : ""}" data-owner="${escapeHtml(chore.assigneeId)}">
+      : completionCheckbox(chore);
+    return `<article class="chore-row agenda-chore ${projected ? "is-projected" : ""}" data-owner="${escapeHtml(chore.assigneeId)}">
       ${indicator}
-      <button class="calendar-chore-title" type="button" data-action="edit" data-id="${Number(chore.id)}" aria-label="${escapeHtml(editLabel)}, assigned to ${escapeHtml(owner)}" title="${escapeHtml(editLabel)}">${title}<span class="sr-only">, assigned to ${escapeHtml(owner)}</span></button>
-      <button class="calendar-remove" type="button" data-action="delete" data-id="${Number(chore.id)}" aria-label="${escapeHtml(removeLabel)}">×</button>
-    </div>`;
-  }
-
-  function calendarCompletedMarkup(record) {
-    const titleText = String(record.title ?? "Untitled chore");
-    const ownerText = ownerName(record.assigneeId);
-    const completedByText = ownerName(record.completedById);
-    const timeText = completedTimeLabel(record.completedAt);
-    const label = escapeHtml(`Completed ${titleText}; assigned to ${ownerText}; completed by ${completedByText} at ${timeText}`);
-    const title = escapeHtml(titleText);
-    return `<div class="calendar-chore is-completed" data-owner="${escapeHtml(record.assigneeId)}" aria-label="${label}">
-      <span class="calendar-check is-completed" role="img" aria-label="Completed"><span aria-hidden="true">✓</span></span>
-      <span class="calendar-chore-title is-completed" title="${title}">${title}</span>
-      <span class="calendar-completed-space" aria-hidden="true"></span>
-    </div>`;
+      <div class="chore-main"><h3>${title}</h3><p class="assigned">Assigned to ${escapeHtml(owner)}</p>${projected ? '<p class="chore-meta">Upcoming recurring occurrence</p>' : ''}</div>
+      <button class="text-button edit-chevron" type="button" data-action="edit" data-id="${Number(chore.id)}" aria-label="${escapeHtml(editLabel)}">›</button>
+    </article>`;
   }
 
   function safeDateLabel(value) {
@@ -438,10 +470,10 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     const owner = escapeHtml(ownerName(record.assigneeId));
     const completedBy = escapeHtml(ownerName(record.completedById));
     const completedAt = record.completedAt || (record.completedOn ? `${record.completedOn}T00:00:00` : "");
-    return `<article class="history-row">
-      <span class="history-check" aria-hidden="true"><span>✓</span></span>
-      <div class="history-main"><span class="history-label">Chore</span><h3>${title}</h3><div class="history-meta"><span>${escapeHtml(detail)}</span><span>For ${owner}</span></div></div>
-      <div class="history-completion"><span>Completed by ${completedBy}</span><time datetime="${escapeHtml(completedAt)}">${escapeHtml(completedTimeLabel(record.completedAt))}</time></div>
+    return `<article class="history-row" data-owner="${escapeHtml(record.assigneeId)}">
+      <span class="history-check" role="img" aria-label="Completed"><span>✓</span></span>
+      <div class="history-main"><h3>${title}</h3><p class="assigned">Assigned to ${owner}</p><div class="history-meta"><span>${escapeHtml(detail)}</span></div><div class="history-completion"><span>Completed by ${completedBy}</span><time datetime="${escapeHtml(completedAt)}">${escapeHtml(completedTimeLabel(record.completedAt))}</time></div></div>
+      ${record.canUndo ? `<button class="text-button undo-button" data-action="undo" data-id="${Number(record.id)}" aria-label="Undo completion of ${title}">Undo</button>` : ''}
     </article>`;
   }
 
@@ -458,7 +490,8 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
 
   function closeDialog(dialog) {
     if (dialog.open) dialog.close();
-    if (savedFocus && document.contains(savedFocus)) savedFocus.focus();
+    if (savedFocus && document.contains(savedFocus)) savedFocus.focus({ preventScroll: true });
+    else $(".view-tab.is-active")?.focus({ preventScroll: true });
   }
 
   function resetChoreErrors() {
@@ -477,6 +510,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     form.dataset.id = chore ? String(chore.id) : "";
     $("#choreDialogTitle").textContent = chore ? "Edit chore" : "Add a chore";
     $("#saveChoreButton").textContent = chore ? "Save changes" : "Save chore";
+    $("#deleteChoreButton").hidden = !chore;
     $("#choreTitle").value = chore?.title || "";
     $("#choreAssignee").value = chore?.assigneeId || state.user.id;
     $("#choreDate").value = chore?.nextDue || todayISO();
@@ -497,7 +531,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     $("#scheduleInterval").required = recurring;
     $("#weekdayPicker").hidden = kind !== "weekly";
     $("#intervalSuffix").textContent = kind === "weekly" ? "weeks" : kind === "monthly" ? "months" : "days";
-    $("#scheduleHint").textContent = kind === "once" ? "A one-time chore leaves the list when completed." : kind === "weekly" ? "Choose at least one weekday, including the due date." : kind === "monthly" ? "The calendar day stays anchored and clamps in shorter months." : "The next due date advances by this many days.";
+    $("#scheduleHint").textContent = kind === "once" ? "A one-time chore leaves the list when completed." : kind === "weekly" ? "Choose at least one weekday, including the due date." : kind === "monthly" ? "Repeats on this day of the month, or the last day of a shorter month." : "The next due date advances by this many days.";
   }
 
   function updateReminderFields() {
@@ -597,15 +631,19 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
   }
 
   async function completeChore(id, button) {
+    button.checked = false;
+    if (pendingWrites.has(`complete:${id}`)) return;
     if (!canWrite()) { showToast("Reconnect before completing chores.", "error"); return; }
     const chore = state.chores.find((item) => Number(item.id) === Number(id));
     if (!chore) return;
+    pendingWrites.add(`complete:${id}`);
     button.disabled = true;
     button.setAttribute("aria-busy", "true");
     try {
-      await jsonRequest(`/api/chores/${Number(id)}/complete`, "POST", { revision: chore.revision });
+      const result = await jsonRequest(`/api/chores/${Number(id)}/complete`, "POST", { revision: chore.revision });
+      button.checked = true;
       await animateCardExit(id);
-      showToast(chore.scheduleKind === "once" ? "Chore completed." : "Chore completed; the next due date is ready.");
+      showToast("Chore completed.", "success", result.completionId);
       await loadState({ silent: true });
     } catch (error) {
       if (error.status === 409) {
@@ -615,49 +653,45 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
       button.disabled = false;
       button.removeAttribute("aria-busy");
     } finally {
+      pendingWrites.delete(`complete:${id}`);
       updateWriteControls();
     }
   }
 
-  async function login(event) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const errorNode = $("#loginError");
-    errorNode.hidden = true;
-    const button = $("button[type=submit]", form);
-    if (!form.reportValidity()) return;
-    button.disabled = true;
+  async function undoCompletion(id) {
+    if (!id || pendingWrites.has(`undo:${id}`)) return;
+    if (!canWrite()) { showToast("Reconnect before undoing a completion.", "error"); return; }
+    pendingWrites.add(`undo:${id}`);
+    updateWriteControls();
     try {
-      const data = await jsonRequest("/api/session", "POST", { userId: $("#loginUser").value, password: $("#loginPassword").value });
-      state.user = data.user;
-      $("#loginPassword").value = "";
-      render();
-      await loadState();
-      registerServiceWorker();
-    } catch (requestError) {
-      errorNode.textContent = requestError.message;
-      errorNode.hidden = false;
-    } finally { button.disabled = false; }
+      await jsonRequest(`/api/history/${Number(id)}/undo`, "POST", {});
+      showToast("Completion undone.");
+      await loadState({ silent: true });
+    } catch (error) {
+      showToast(error.message, "error");
+      if (error.status === 409) await loadState({ silent: true });
+    } finally {
+      pendingWrites.delete(`undo:${id}`);
+      updateWriteControls();
+    }
   }
 
   async function logout() {
     if (!canWrite()) { showToast("Reconnect before signing out.", "error"); return; }
     try { await request("/api/session", { method: "DELETE", body: "{}" }); } catch (error) { showToast(error.message, "error"); return; }
+    try { await (await navigator.serviceWorker?.ready)?.pushManager.getSubscription()?.then((subscription) => subscription?.unsubscribe()); } catch { /* The server subscription was already removed. */ }
     stopEvents();
-    state.user = null;
-    state.chores = [];
-    state.history = [];
-    state.loading = false;
-    render();
-    $("#loginPassword").focus();
+    location.replace("/login");
   }
 
   function fillSettings() {
     const settings = state.user || {};
+    $("#signedInAs").textContent = `Signed in as ${settings.name || ownerName(settings.id)}`;
     applyTheme(state.theme, { save: false });
     setTimeSetting("digest", settings.digestTime);
     setTimeSetting("missed", settings.missedAlertTime);
     setTimeSetting("defaultReminder", settings.defaultReminderTime);
+    $("#activityNotifications").checked = settings.activityNotifications !== false;
   }
 
   function setTimeSetting(name, value) {
@@ -678,8 +712,9 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     const errorNode = $("#settingsError");
     errorNode.hidden = true;
     try {
-      await jsonRequest("/api/settings", "PATCH", { digestTime: $("#digestEnabled").checked ? $("#digestTime").value : null, missedAlertTime: $("#missedEnabled").checked ? $("#missedAlertTime").value : null, defaultReminderTime: $("#defaultReminderEnabled").checked ? $("#defaultReminderTime").value : null });
-      state.user = { ...state.user, digestTime: $("#digestEnabled").checked ? $("#digestTime").value : null, missedAlertTime: $("#missedEnabled").checked ? $("#missedAlertTime").value : null, defaultReminderTime: $("#defaultReminderEnabled").checked ? $("#defaultReminderTime").value : null };
+      const activityNotifications = $("#activityNotifications").checked;
+      await jsonRequest("/api/settings", "PATCH", { digestTime: $("#digestEnabled").checked ? $("#digestTime").value : null, missedAlertTime: $("#missedEnabled").checked ? $("#missedAlertTime").value : null, defaultReminderTime: $("#defaultReminderEnabled").checked ? $("#defaultReminderTime").value : null, activityNotifications });
+      state.user = { ...state.user, digestTime: $("#digestEnabled").checked ? $("#digestTime").value : null, missedAlertTime: $("#missedEnabled").checked ? $("#missedAlertTime").value : null, defaultReminderTime: $("#defaultReminderEnabled").checked ? $("#defaultReminderTime").value : null, activityNotifications };
       $("#settingsSuccess").hidden = false;
       window.setTimeout(() => { $("#settingsSuccess").hidden = true; }, 2400);
       showToast("Notification times saved.");
@@ -717,8 +752,8 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
   function updateInstallGuidance() {
     const hint = $("#installHint");
     if (!hint) return;
-    hint.hidden = isStandalone();
-    if (!hint.hidden) hint.textContent = state.installPrompt ? "Use Install app above to add this list to your home screen." : isIOS() ? "Use your browser's Share menu, then choose Add to Home Screen." : "Use your browser's install option to add this list to your home screen.";
+    hint.hidden = false;
+    hint.textContent = isStandalone() ? "You’re using the installed app." : state.installPrompt ? "Use Install app to add this list to your home screen." : isIOS() ? "Use your browser's Share menu, then choose Add to Home Screen." : "Use your browser's install option to add this list to your home screen.";
   }
 
   async function refreshPushState() {
@@ -737,8 +772,18 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
       if (isIOS() && !isStandalone()) { status.textContent = "Add the app to your Home Screen to enable push."; button.disabled = true; return; }
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
-      if (subscription) { status.textContent = "Push is enabled on this device."; button.textContent = "Disable push"; button.disabled = false; }
-      else { status.textContent = Notification.permission === "denied" ? "Notifications are blocked in browser settings." : "Push is ready to enable."; button.textContent = "Enable push"; button.disabled = Notification.permission === "denied"; }
+      if (subscription) {
+        await jsonRequest("/api/push-subscriptions", "PUT", subscription.toJSON());
+        status.textContent = "Push is enabled on this device.";
+        button.textContent = "Disable push";
+        button.disabled = false;
+        $("#pushTestButton").hidden = false;
+      } else {
+        status.textContent = Notification.permission === "denied" ? "Notifications are blocked in browser settings." : "Push is ready to enable.";
+        button.textContent = "Enable push";
+        button.disabled = Notification.permission === "denied";
+        $("#pushTestButton").hidden = true;
+      }
     } catch (error) { status.textContent = error.message; button.disabled = true; }
   }
 
@@ -753,7 +798,10 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     const button = $("#pushButton");
     button.disabled = true;
     try {
+      const permission = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+      if (permission !== "granted") throw new Error("Notifications are blocked in browser settings.");
       const config = await request("/api/push-key");
+      if (!config.configured || !config.publicKey) throw new Error("Push is not configured on this server.");
       const registration = await navigator.serviceWorker.ready;
       const existing = await registration.pushManager.getSubscription();
       if (existing) {
@@ -761,9 +809,6 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
         await existing.unsubscribe();
         showToast("Push disabled on this device.");
       } else {
-        if (Notification.permission === "denied") throw new Error("Notifications are blocked in browser settings.");
-        const permission = await Notification.requestPermission();
-        if (permission !== "granted") throw new Error("Notification permission was not granted.");
         const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(config.publicKey) });
         await jsonRequest("/api/push-subscriptions", "PUT", subscription.toJSON());
         showToast("Push enabled on this device.");
@@ -772,9 +817,17 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     finally { await refreshPushState(); }
   }
 
+  async function testPush() {
+    const button = $("#pushTestButton");
+    button.disabled = true;
+    try { await jsonRequest("/api/push-test", "POST", {}); showToast("Test notification sent."); }
+    catch (error) { showToast(error.message, "error"); }
+    finally { button.disabled = false; }
+  }
+
   async function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
-    try { await navigator.serviceWorker.register("/sw.js"); } catch { showToast("The app shell could not be installed offline.", "error"); }
+    try { await navigator.serviceWorker.register("/sw.js"); } catch { showToast("Notifications could not be prepared on this browser.", "error"); }
   }
 
   function setupInstallPrompt() {
@@ -796,7 +849,14 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
   }
 
   function bindEvents() {
-    $("#loginForm").addEventListener("submit", login);
+    $$("dialog").forEach((dialog) => dialog.addEventListener("cancel", (event) => { event.preventDefault(); closeDialog(dialog); }));
+    $("#toastUndo").addEventListener("click", () => undoCompletion(toastCompletionId));
+    $("#toastDismiss").addEventListener("click", dismissToast);
+    $("#toast").addEventListener("mouseenter", pauseToast);
+    $("#toast").addEventListener("mouseleave", resumeToast);
+    $("#toast").addEventListener("focusin", pauseToast);
+    $("#toast").addEventListener("focusout", () => window.setTimeout(resumeToast, 0));
+    $("#deleteChoreButton").addEventListener("click", () => { const id = Number($("#choreForm").dataset.id); closeDialog($("#choreDialog")); openDeleteDialog(id); });
     $("#logoutButton").addEventListener("click", logout);
     $("#addChoreButton").addEventListener("click", () => openChoreDialog());
     $("#emptyAddButton").addEventListener("click", () => openChoreDialog());
@@ -812,6 +872,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     $("#settingsForm").addEventListener("submit", saveSettings);
     $("#passwordForm").addEventListener("submit", savePassword);
     $("#pushButton").addEventListener("click", togglePush);
+    $("#pushTestButton").addEventListener("click", testPush);
     $("#themeOptions").addEventListener("change", (event) => { if (event.target.name === "theme") applyTheme(event.target.value); });
     $("#scheduleKind").addEventListener("change", updateScheduleFields);
     $("#reminderMode").addEventListener("change", updateReminderFields);
@@ -826,18 +887,25 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
       tabs[next].click();
       tabs[next].focus();
     });
-    $("#previousMonth").addEventListener("click", () => changeMonth(-1));
-    $("#nextMonth").addEventListener("click", () => changeMonth(1));
+    $("#previousWeek").addEventListener("click", () => changeWeek(-1));
+    $("#nextWeek").addEventListener("click", () => changeWeek(1));
+    $("#calendarToday").addEventListener("click", () => { state.calendarDate = todayISO(); state.calendarDays = 14; render(); });
+    $("#calendarMonth").addEventListener("change", (event) => { if (/^\d{4}-\d{2}$/.test(event.target.value)) { state.calendarDate = `${event.target.value}-01`; state.calendarDays = 14; render(); } });
+    $("#calendarWeek").addEventListener("click", (event) => { const date = event.target.closest("[data-calendar-date]")?.dataset.calendarDate; if (date) { state.calendarDate = date; state.calendarDays = 14; render(); } });
+    $("#calendarMore").addEventListener("click", () => { state.calendarDays += 14; render(); });
     const handleChoreAction = (event) => {
       const button = event.target.closest("[data-action]");
       if (!button) return;
+      if (button.disabled) return;
       const id = Number(button.dataset.id);
       if (button.dataset.action === "edit") openChoreDialog(id);
       if (button.dataset.action === "delete") openDeleteDialog(id);
       if (button.dataset.action === "complete") completeChore(id, button);
+      if (button.dataset.action === "undo") undoCompletion(id);
     };
     $("#choreSections").addEventListener("click", handleChoreAction);
-    $("#calendarGrid").addEventListener("click", handleChoreAction);
+    $("#calendarAgenda").addEventListener("click", handleChoreAction);
+    $("#historyGroups").addEventListener("click", handleChoreAction);
     bindTimeToggle("#digestEnabled", "#digestTime");
     bindTimeToggle("#missedEnabled", "#missedAlertTime");
     bindTimeToggle("#defaultReminderEnabled", "#defaultReminderTime");
@@ -845,10 +913,9 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     window.addEventListener("online", () => { state.online = true; render(); if (state.user) loadState({ silent: true }); });
   }
 
-  function changeMonth(offset) {
-    const [year, month] = state.calendarMonth.split("-").map(Number);
-    const next = new Date(Date.UTC(year, month - 1 + offset, 1));
-    state.calendarMonth = next.toISOString().slice(0, 10);
+  function changeWeek(offset) {
+    state.calendarDate = addDays(state.calendarDate || todayISO(), offset * 7);
+    state.calendarDays = 14;
     render();
   }
 
@@ -860,7 +927,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     updateScheduleFields();
     updateReminderFields();
     render();
-    try { acceptState(await request("/api/state")); render(); connectEvents(); } catch (error) { if (error.status !== 401) { state.error = error.message; render(); } }
+    try { acceptState(await request("/api/state")); render(); connectEvents(); } catch (error) { if (error.status === 401) location.replace("/login"); else { state.loading = false; state.error = error.message; render(); } }
   }
 
   boot();

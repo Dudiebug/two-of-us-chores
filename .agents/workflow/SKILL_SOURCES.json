@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "reference_date": "2026-09-10",
+  "kind": "reviewed_upstream_references_not_an_installation_lock",
+  "third_party_text_bundled": false,
+  "skills": [
+    {
+      "name": "old-coder",
+      "repository": "https://github.com/AmazingAng/old-coder",
+      "reference_commit": "a0eb529d393a1cb3ccc564e32b2104e7e75c7a29",
+      "entry": "skills/old-coder/SKILL.md",
+      "sidecars": "skills/old-coder/references/",
+      "role": "specification_to_test_mapping_and_risk_scaled_evidence",
+      "installed_status": "UNVERIFIED"
+    },
+    {
+      "name": "ponytail",
+      "repository": "https://github.com/DietrichGebert/ponytail",
+      "reference_commit": "356918eba965ee1eac64bd3a7f0dd02108350de5",
+      "entry": "skills/ponytail/SKILL.md",
+      "sidecars": null,
+      "role": "minimal_correct_implementation_and_diff_review",
+      "installed_status": "UNVERIFIED"
+    },
+    {
+      "name": "graphify",
+      "repository": "https://github.com/Graphify-Labs/graphify",
+      "reference_commit": "23f2ffaa43fd12f25d9eabe91e6d184b5d89b474",
+      "entry": "graphify/skill.md",
+      "sidecars": "resolve_from_matching_host_entry_and_install_source",
+      "package": "graphifyy",
+      "cli": "graphify",
+      "role": "advisory_structure_and_impact",
+      "installed_status": "UNVERIFIED"
+    }
+  ]
+}

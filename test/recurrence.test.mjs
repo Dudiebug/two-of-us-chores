@@ -13,7 +13,7 @@ test("daily and every-N recurrence advance by the configured days", () => {
   assert.equal(daysBetween("2024-02-28", "2024-03-02"), 3);
   assert.equal(nextOccurrence({ schedule_kind: "daily", schedule_interval: 1, next_due: "2024-02-29" }), "2024-03-01");
   assert.equal(nextOccurrence({ schedule_kind: "every", schedule_interval: 3, next_due: "2024-03-01" }), "2024-03-04");
-  assert.equal(normalizeSchedule({ kind: "every-n", interval: 4, nextDue: "2024-03-01" }).schedule_kind, "every");
+  assert.throws(() => normalizeSchedule({ kind: "every-n", interval: 4, nextDue: "2024-03-01" }), /valid schedule/);
 });
 
 test("weekly recurrence respects selected weekdays and week interval", () => {

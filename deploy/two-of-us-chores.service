@@ -1,0 +1,29 @@
+[Unit]
+Description=Two of Us Chores
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=chores
+Group=chores
+WorkingDirectory=/opt/two-of-us-chores
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/two-of-us-chores.env
+ExecStart=/usr/local/bin/node /opt/two-of-us-chores/src/server.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+StateDirectory=two-of-us-chores
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/two-of-us-chores
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

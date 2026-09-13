@@ -26,27 +26,30 @@ export function createScheduler({ db, timeZone, send, changed = () => {}, now = 
       if (shifted.length) changed();
       const users = db.prepare("SELECT id,digest_time,missed_alert_time,default_reminder_time FROM users").all();
       for (const user of users) {
-        if (user.missed_alert_time === local.time) {
+        const missedSlot = recentSlot(local, user.missed_alert_time);
+        if (missedSlot) {
           const chores = db.prepare(`SELECT title FROM chores
-            WHERE assignee_id=? AND missed_count>0 AND next_due<=? ORDER BY next_due,id`).all(user.id, local.date);
+            WHERE assignee_id=? AND missed_count>0 AND next_due<=? ORDER BY next_due,id`).all(user.id, missedSlot.date);
           if (chores.length) {
-            await tryOnce(`missed:${user.id}:${local.date}`, db, () => send(user.id, "Missed chores", listBody(chores)));
+            await tryOnce(`missed:${user.id}:${missedSlot.date}`, db, () => send(user.id, "Missed chores", listBody(chores), { tag: `missed-${missedSlot.date}` }));
           }
         }
-        if (user.digest_time === local.time) {
+        const digestSlot = recentSlot(local, user.digest_time);
+        if (digestSlot) {
           const chores = db.prepare(`SELECT title FROM chores
-            WHERE assignee_id=? AND next_due<=? ORDER BY next_due,id`).all(user.id, local.date);
+            WHERE assignee_id=? AND next_due<=? ORDER BY next_due,id`).all(user.id, digestSlot.date);
           if (chores.length) {
-            await tryOnce(`digest:${user.id}:${local.date}`, db, () => send(user.id, "Today at home", listBody(chores)));
+            await tryOnce(`digest:${user.id}:${digestSlot.date}`, db, () => send(user.id, "Today at home", listBody(chores), { tag: `digest-${digestSlot.date}` }));
           }
         }
-        const chores = db.prepare(`SELECT id,title,next_due,reminder_mode,reminder_time FROM chores
-          WHERE assignee_id=? AND next_due=? AND reminder_mode!='off' ORDER BY id`).all(user.id, local.date);
-        for (const chore of chores) {
+        const candidates = db.prepare(`SELECT id,title,next_due,reminder_mode,reminder_time FROM chores
+          WHERE assignee_id=? AND next_due BETWEEN ? AND ? AND reminder_mode!='off' ORDER BY id`).all(user.id, previousDate(local.date), local.date);
+        for (const chore of candidates) {
           const time = chore.reminder_mode === "override" ? chore.reminder_time : user.default_reminder_time;
-          if (time === local.time) {
+          const slot = recentSlot(local, time);
+          if (slot && chore.next_due === slot.date) {
             await tryOnce(`chore:${user.id}:${chore.id}:${chore.next_due}`, db,
-              () => send(user.id, "Chore reminder", chore.title));
+              () => send(user.id, "Chore reminder", chore.title, { tag: `chore-${chore.id}-${chore.next_due}` }));
           }
         }
       }
@@ -58,6 +61,23 @@ export function createScheduler({ db, timeZone, send, changed = () => {}, now = 
   const timer = setInterval(() => tick().catch((error) => console.error("scheduler", error)), 60_000);
   timer.unref?.();
   return { tick, stop: () => clearInterval(timer) };
+}
+
+function recentSlot(local, scheduled) {
+  if (!scheduled) return null;
+  const [hour, minute] = scheduled.split(":").map(Number);
+  const [nowHour, nowMinute] = local.time.split(":").map(Number);
+  if (![hour, minute, nowHour, nowMinute].every(Number.isInteger)) return null;
+  let elapsed = (nowHour * 60 + nowMinute) - (hour * 60 + minute);
+  let date = local.date;
+  if (elapsed < 0) { elapsed += 1440; date = previousDate(date); }
+  return elapsed <= 60 ? { date } : null;
+}
+
+function previousDate(iso) {
+  const date = new Date(`${iso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
 }
 
 export async function tryOnce(key, db, action) {
