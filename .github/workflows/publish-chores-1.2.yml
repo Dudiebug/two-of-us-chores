@@ -1,0 +1,76 @@
+name: Publish Chores 1.2
+on:
+  push:
+    branches: [main]
+    paths: [releases/publish-1.2.json]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download the verified unsigned build
+        run: |
+          RUN=$(jq -r .build_run releases/publish-1.2.json)
+          [[ "$RUN" =~ ^[0-9]+$ ]]
+          test "$(gh run view "$RUN" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = success
+          gh run download "$RUN" --repo "$GITHUB_REPOSITORY" --name chores-1.2-unsigned --dir unsigned
+      - name: Attach the public detached APK signing block
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,hashlib,json,struct
+          m=json.loads(Path('releases/publish-1.2.json').read_text())
+          source=Path('unsigned/chores-1.2.0-unsigned.apk').read_bytes()
+          assert hashlib.sha256(source).hexdigest()==m['unsigned_sha256']
+          eocd=source.rfind(b'PK\x05\x06'); assert eocd>0
+          cd=struct.unpack_from('<I',source,eocd+16)[0]
+          assert source[cd:cd+4]==b'PK\x01\x02'
+          block=base64.b64decode(m['signing_block_base64'],validate=True)
+          signed=bytearray(source[:cd]+block+source[cd:])
+          struct.pack_into('<I',signed,eocd+len(block)+16,cd+len(block))
+          assert hashlib.sha256(signed).hexdigest()==m['signed_sha256']
+          Path('release').mkdir()
+          Path('release/chores-1.2.0.apk').write_bytes(signed)
+          Path('release/SHA256SUMS.txt').write_text(m['signed_sha256']+'  chores-1.2.0.apk\n')
+          PY
+      - name: Verify Android signature and application identity
+        run: |
+          BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BT/apksigner" verify --verbose --print-certs release/chores-1.2.0.apk > release/VERIFICATION.txt
+          grep -qi '80becf7ffa79093f07cfc4cb13ab42da0be05eb73855e106103150fb13520cc8' release/VERIFICATION.txt
+          "$BT/aapt" dump badging release/chores-1.2.0.apk > release/package.txt
+          grep -q "name='net.dudiebug.chores'" release/package.txt
+          grep -q "versionCode='4'" release/package.txt
+          grep -q "versionName='1.2.0'" release/package.txt
+          grep -q "application-label:'Chores'" release/package.txt
+      - name: Publish version 1.2.0
+        run: |
+          SOURCE=$(jq -r .source_commit releases/publish-1.2.json)
+          [[ "$SOURCE" =~ ^[a-f0-9]{40}$ ]]
+          git merge-base --is-ancestor "$SOURCE" HEAD
+          if gh release view v1.2.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Refusing to overwrite an existing v1.2.0 release.' >&2
+            exit 1
+          fi
+          cat > release/notes.md <<'EOF'
+          # Chores 1.2
+
+          Configurable accounts, admin-managed private groups, a checklist icon, and native Android notification repair.
+
+          Fresh setup defines an administrator username/password and optional users and groups. Existing Dylan/Mady accounts and passwords are preserved in the Home group; Dylan becomes the initial administrator. Admin can create/disable users, reset passwords, create/archive groups and manage membership. Chore access is enforced by group membership on the server, including history, live updates and native notification queues.
+
+          Android now loads its bundled bridge through an explicit same-origin script while preserving the site's strict CSP. Notification readiness, permission requests, Android settings and actual notification delivery results are handled by Chores rather than Chrome.
+
+          Update the LXC first: `cd /opt/two-of-us-chores && bash install.sh --update`. Then install `chores-1.2.0.apk` over the previous APK. It retains package `net.dudiebug.chores` and the original Android signing certificate.
+
+          Background native notifications use WorkManager polling (15-minute minimum; Android can delay them longer), not realtime FCM. Browser Web Push subscriptions remain independent. Target-phone behavior still needs confirmation; see the test evidence and `docs/RELEASE_1.2.md`.
+          EOF
+          gh release create v1.2.0 --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --title 'Chores 1.2' --notes-file release/notes.md release/chores-1.2.0.apk release/SHA256SUMS.txt release/VERIFICATION.txt
