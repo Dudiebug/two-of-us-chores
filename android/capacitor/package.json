@@ -1,0 +1,15 @@
+{
+  "name": "two-of-us-chores-capacitor",
+  "private": true,
+  "version": "1.1.0",
+  "type": "module",
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/background-runner": "3.0.0",
+    "@capacitor/core": "8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "3.0.5",
+    "@capacitor/cli": "8.5.2"
+  }
+}
