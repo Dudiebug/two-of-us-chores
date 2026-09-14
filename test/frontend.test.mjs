@@ -5,14 +5,16 @@ import test from "node:test";
 const extractAttribute = (tag, name) => tag.match(new RegExp(`\\b${name}=["']([^"']+)["']`))?.[1];
 
 test("authenticated UI is a dashboard with Today, Calendar, and History tools", async () => {
-  const [html, script, styles, serviceWorker, loginHtml, loginScript] = await Promise.all([
+  const [html, script, styles, serviceWorker, loginHtml, loginScript, manifestText] = await Promise.all([
     readFile(new URL("../public/index.html", import.meta.url), "utf8"),
     readFile(new URL("../public/app.js", import.meta.url), "utf8"),
     readFile(new URL("../public/styles.css", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
     readFile(new URL("../public/login.html", import.meta.url), "utf8"),
     readFile(new URL("../public/login.js", import.meta.url), "utf8"),
+    readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
   ]);
+  const manifest = JSON.parse(manifestText);
 
   assert.match(html, /<div class="view-tabs" role="tablist" aria-label="Chore views">/);
   const tabTags = [...html.matchAll(/<button\b[^>]*\brole="tab"[^>]*>/g)].map(([tag]) => tag);
@@ -60,6 +62,14 @@ test("authenticated UI is a dashboard with Today, Calendar, and History tools", 
   assert.deepEqual([...new Set(cssThemes)].sort(), [...explicitThemes].sort());
   for (const theme of explicitThemes) assert.match(styles, new RegExp(`:root\\[data-theme="${theme}"\\]\\s*\\{`));
 
+  assert.match(html, /<meta name="theme-color" content="#faf9f6">/);
+  assert.match(html, /<script src="\/login\.js" defer><\/script>/);
+  assert.match(loginScript, /getComputedStyle\(document\.documentElement\)/);
+  assert.match(loginScript, /getPropertyValue\("--canvas"\)/);
+  assert.match(loginScript, /new MutationObserver\(syncThemeColor\)/);
+  assert.match(loginScript, /attributeFilter:\s*\["data-theme"\]/);
+  assert.match(loginScript, /matchMedia\("\(prefers-color-scheme: dark\)"\)/);
+
   const scheduleSelect = html.match(/<select\b[^>]*\bname="scheduleKind"[^>]*>([\s\S]*?)<\/select>/)?.[1];
   assert.ok(scheduleSelect, "the chore form should expose recurrence choices");
   const recurrenceKinds = [...scheduleSelect.matchAll(/<option\b[^>]*>/g)].map(([tag]) => extractAttribute(tag, "value"));
@@ -85,9 +95,20 @@ test("authenticated UI is a dashboard with Today, Calendar, and History tools", 
   assert.match(styles, /\.calendar-day-button\s*\{[^}]+min-height/);
 
   assert.match(script, /navigator\.serviceWorker\.register\(\s*["']\/sw\.js["']\s*\)/);
+  assert.match(loginScript, /navigator\.serviceWorker\.register\(\s*["']\/sw\.js["']\s*\)/);
   assert.doesNotMatch(serviceWorker, /cache\.addAll|caches\.match|app\.js/);
   assert.match(serviceWorker, /data:\s*\{ url: payload\.url \}/);
   assert.match(serviceWorker, /new URL\(event\.notification\.data\?\.url \|\| "\/app"/);
   assert.match(loginHtml, /id="loginForm"/);
+  assert.match(loginHtml, /rel="manifest" href="\/manifest\.webmanifest"/);
   assert.match(loginScript, /location\.replace\("\/app"\)/);
+
+  assert.equal(manifest.start_url, "/login");
+  assert.equal(manifest.scope, "/");
+  assert.equal(manifest.display, "standalone");
+  assert.equal(manifest.prefer_related_applications, false);
+  assert.deepEqual(manifest.icons.map(({ sizes, type, purpose }) => ({ sizes, type, purpose })), [
+    { sizes: "192x192", type: "image/png", purpose: "any" },
+    { sizes: "512x512", type: "image/png", purpose: "any" },
+  ]);
 });
