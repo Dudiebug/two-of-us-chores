@@ -16,6 +16,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chores-1.2-source-transfer
+          path: updates/
+          retention-days: 1
       - uses: actions/setup-node@v4
         with:
           node-version: '24.21.0'
@@ -30,12 +35,17 @@ jobs:
           from pathlib import Path
           request=json.loads(Path('updates/v12-request.json').read_text())
           parts=sorted(Path('updates').glob('v12-patch.part*.b64'))
-          data=gzip.decompress(base64.b64decode(''.join(p.read_text().strip() for p in parts), validate=True))
+          encoded=''.join(p.read_text().strip() for p in parts)
+          for fix in sorted(request.get('transport_fixes',[]),key=lambda f:f['start'],reverse=True):
+            assert encoded[fix['start']:fix['end']]==fix['old'], 'Transport repair mismatch'
+            encoded=encoded[:fix['start']]+fix['new']+encoded[fix['end']:]
+          data=gzip.decompress(base64.b64decode(encoded, validate=True))
           assert hashlib.sha256(data).hexdigest()==request['patch_sha256'], 'Source patch digest mismatch'
           Path('/tmp/chores-v12.patch').write_bytes(data)
           subprocess.run(['git','apply','--check','/tmp/chores-v12.patch'],check=True)
           subprocess.run(['git','apply','--index','/tmp/chores-v12.patch'],check=True)
           PY
+          if [ -f updates/v12-post.py ]; then python3 updates/v12-post.py; fi
       - name: Build and test
         run: |
           bash android/build-1.2.sh
