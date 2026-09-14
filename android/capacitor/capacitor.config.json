@@ -1,8 +1,8 @@
 {
   "appId": "net.dudiebug.chores",
-  "appName": "Two of Us Chores",
+  "appName": "Chores",
   "webDir": "www",
-  "appendUserAgent": " TwoOfUsCapacitor/1.1",
+  "appendUserAgent": " ChoresCapacitor/1.1.1",
   "backgroundColor": "#161e20",
   "server": {
     "url": "https://chores.dudiebug.net",
