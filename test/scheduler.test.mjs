@@ -11,7 +11,7 @@ const PASSWORDS = { DYLAN_PASSWORD: "dylan-test-password", MADY_PASSWORD: "mady-
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), "chores-scheduler-"));
   const path = join(directory, "chores.db");
-  const db = await openDatabase(path, PASSWORDS);
+  const db = await openDatabase(path, { ...PASSWORDS, HOUSEHOLD_TIMEZONE: "America/Chicago" });
   return { db, path };
 }
 
@@ -95,7 +95,7 @@ test("reminders catch up within one hour without repeating", async () => {
     await scheduler.tick();
     await scheduler.tick();
     scheduler.stop();
-    assert.deepEqual(sent, [["D", "Chore reminder", "Bins", { tag: "chore-1-2024-06-10" }]]);
+    assert.deepEqual(sent, [["D", "Chore reminder", "Bins", { groupId: "legacy", url: "/app?groupId=legacy", tag: "chore-legacy-1-2024-06-10" }]]);
   } finally {
     db.close();
   }

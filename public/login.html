@@ -6,27 +6,28 @@
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" content="#faf9f6" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#161e20" media="(prefers-color-scheme: dark)">
-    <meta name="description" content="Sign in to Two of Us Chores.">
+    <meta name="description" content="Sign in to Chores Chores.">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="apple-touch-icon" href="/icon-192.png">
     <link rel="icon" href="/icon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/login.css">
-    <title>Sign in · Two of Us</title>
+    <title>Sign in · Chores</title>
   </head>
   <body>
     <main class="login-view" aria-labelledby="loginTitle">
       <section class="login-card">
-        <p class="wordmark">two of us</p>
+        <p class="wordmark">Chores</p>
         <h1 id="loginTitle">Household chores</h1>
         <p class="lede">Sign in to view and update the shared list.</p>
         <form id="loginForm" novalidate>
-          <label>Who is signing in?<select id="loginUser" name="userId" required><option value="D">Dylan</option><option value="M">Mady</option></select></label>
+          <label for="loginUser">Username</label><input id="loginUser" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="3" maxlength="40" required>
           <div><label for="loginPassword">Password</label><div class="password-field"><input id="loginPassword" name="password" type="password" autocomplete="current-password" required><button id="togglePassword" type="button" aria-label="Show password" aria-pressed="false">Show</button></div></div>
           <p id="loginError" role="alert" hidden></p>
           <button type="submit">Open the list</button>
         </form>
       </section>
     </main>
+    <script src="/native-bridge.js" defer></script>
     <script src="/login.js" type="module"></script>
   </body>
 </html>

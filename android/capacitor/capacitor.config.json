@@ -2,7 +2,7 @@
   "appId": "net.dudiebug.chores",
   "appName": "Chores",
   "webDir": "www",
-  "appendUserAgent": " ChoresCapacitor/1.1.1",
+  "appendUserAgent": " ChoresCapacitor/1.2.0",
   "backgroundColor": "#161e20",
   "server": {
     "url": "https://chores.dudiebug.net",

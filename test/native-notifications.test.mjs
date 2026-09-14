@@ -20,12 +20,12 @@ test("Capacitor native notifications have a separate authenticated delivery path
   assert.match(server, /path === "\/api\/native-device"/);
   assert.match(server, /queueNativeNotification/);
   assert.match(server, /return queued \|\| delivered/);
-  assert.match(html, /native-app\.js\?v=1\.1\.0/);
+  assert.match(html, /native-app\.js\?v=1\.2\.0/);
   assert.match(bridge, /ChoresNotifications/);
-  assert.match(bridge, /requestPermissions\(\{ apis: \["notifications"\] \}\)/);
-  assert.match(bridge, /requestInitialPermissionOnce/);
+  assert.match(bridge, /requestPermissions\(\)/);
+  assert.match(bridge, /initialize:/);
   assert.match(bridge, /\/api\/native-device/);
-  assert.match(bridge, /\/api\/push-test/);
+  assert.match(bridge, /\/api\/native-test/);
   assert.match(plugin, /@CapacitorPlugin/);
   assert.match(plugin, /name = "ChoresNotifications"/);
   assert.match(plugin, /Manifest\.permission\.POST_NOTIFICATIONS/);

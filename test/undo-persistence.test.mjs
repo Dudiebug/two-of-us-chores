@@ -34,7 +34,7 @@ test("v4 upgrade preserves data, reserves historical IDs, and keeps legacy histo
   db.close();
   db = await openDatabase(path);
   assert.deepEqual(db.prepare("SELECT * FROM chores").all(), before);
-  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 6);
+  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 7);
   assert.equal(publicState(db, "D").history[0].canUndo, false);
   const newId = Number(insertChore(db).lastInsertRowid);
   assert.ok(newId > 90);

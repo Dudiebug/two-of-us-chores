@@ -155,6 +155,14 @@ main() {
   fi
   if [[ "$mode" != --update ]]; then configure_app; fi
   prepare_state
+  if [[ "$mode" != --update ]]; then
+    node "$APP_DIR/deploy/bootstrap.mjs" "$CONFIG_PATH"
+    local database_path
+    database_path="$(CONFIG_PATH="$CONFIG_PATH" node --input-type=module -e 'import {readFileSync} from "node:fs"; import {parseEnv} from "node:util"; const readConfig=p=>parseEnv(readFileSync(p,"utf8")); console.log(readConfig(process.env.CONFIG_PATH).DATABASE_PATH)' )"
+    for suffix in '' -wal -shm; do
+      if [[ -f "${database_path}${suffix}" && ! -L "${database_path}${suffix}" ]]; then chown chores:chores "${database_path}${suffix}"; chmod 0600 "${database_path}${suffix}"; fi
+    done
+  fi
   install_service
   start_service
   check_local

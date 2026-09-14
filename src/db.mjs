@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { passwordHash } from "./security.mjs";
+import { migrateGroups, groupsForUser, requireGroup } from "./groups.mjs";
 
 const SCHEMA_VERSION = 6;
 
@@ -19,9 +20,11 @@ export async function openDatabase(path, passwords = {}) {
     defensive: true,
   });
   db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA trusted_schema=OFF;");
+  if (db.prepare("PRAGMA user_version").get().user_version > 7) throw new Error("Database requires a newer Chores release");
   ensureSchema(db, false);
   await seedUsers(db, passwords);
   ensureSchema(db);
+  migrateGroups(db, passwords.HOUSEHOLD_TIMEZONE || "America/Los_Angeles");
   return db;
 }
 
@@ -95,7 +98,8 @@ function ensureSchema(db, includeChores = true) {
       if (sql.includes("AUTOINCREMENT")) continue;
       db.exec(`ALTER TABLE ${table} RENAME TO ${table}_before_v5`);
       create(db);
-      db.exec(`INSERT INTO ${table} SELECT * FROM ${table}_before_v5; DROP TABLE ${table}_before_v5`);
+      const columns = db.prepare(`PRAGMA table_info(${table}_before_v5)`).all().map(({name}) => name).join(",");
+      db.exec(`INSERT INTO ${table} (${columns}) SELECT ${columns} FROM ${table}_before_v5; DROP TABLE ${table}_before_v5`);
     }
     // Completed one-time chores may have higher IDs than any remaining live row.
     const maximum = db.prepare("SELECT MAX(id) AS id FROM (SELECT id FROM chores UNION ALL SELECT chore_id AS id FROM completion_history)").get().id || 0;
@@ -119,7 +123,7 @@ function ensureSchema(db, includeChores = true) {
     CREATE INDEX IF NOT EXISTS subscriptions_user ON push_subscriptions(user_id);
     CREATE INDEX IF NOT EXISTS native_devices_user ON native_devices(user_id);
     CREATE INDEX IF NOT EXISTS native_events_user_id ON native_notification_events(user_id,id);
-    PRAGMA user_version=${SCHEMA_VERSION};
+
   `);
 }
 
@@ -147,6 +151,7 @@ function createChoresTable(db) {
       revision INTEGER NOT NULL DEFAULT 1 CHECK(revision >= 1),
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
+      ${db.prepare("SELECT 1 FROM sqlite_master WHERE name='groups'").get() ? ",group_id TEXT NOT NULL DEFAULT 'legacy' REFERENCES groups(id)" : ""}
     ) STRICT;
   `);
 }
@@ -165,6 +170,7 @@ function createCompletionHistoryTable(db) {
       completed_on TEXT NOT NULL,
       undo_snapshot TEXT,
       undo_revision INTEGER
+      ${db.prepare("SELECT 1 FROM sqlite_master WHERE name='groups'").get() ? ",group_id TEXT NOT NULL DEFAULT 'legacy' REFERENCES groups(id)" : ""}
     ) STRICT;
   `);
 }
@@ -184,6 +190,9 @@ function migrateChores(db) {
 }
 
 async function seedUsers(db, passwords) {
+  // Compatibility bootstrap for existing deployments/test fixtures only. New installs use deploy/bootstrap.mjs.
+  if (db.prepare("SELECT COUNT(*) AS n FROM users").get().n) return;
+  if (!(passwords.DYLAN_PASSWORD || passwords.D) && !(passwords.MADY_PASSWORD || passwords.M)) return;
   const definitions = [
     ["D", "Dylan", passwords.DYLAN_PASSWORD ?? passwords.D],
     ["M", "Mady", passwords.MADY_PASSWORD ?? passwords.M],
@@ -214,23 +223,27 @@ export function transaction(db, fn) {
   }
 }
 
-export function publicState(db, userId, household = {}) {
-  const user = db.prepare(`SELECT id,name,initial,digest_time AS digestTime,
+export function publicState(db, userId, household = {}, selectedGroup = null) {
+  const groups = groupsForUser(db, userId);
+  const group = selectedGroup ? requireGroup(db, userId, selectedGroup) : groups[0] || null;
+  const groupId = group?.id || null;
+  const user = db.prepare(`SELECT id,username,name,initial,is_admin AS isAdmin,active,digest_time AS digestTime,
     missed_alert_time AS missedAlertTime,default_reminder_time AS defaultReminderTime,activity_notifications AS activityNotifications
     FROM users WHERE id=?`).get(userId);
-  const chores = db.prepare(`SELECT id,title,assignee_id AS assigneeId,schedule_kind AS scheduleKind,
+  const chores = db.prepare(`SELECT id,group_id AS groupId,title,assignee_id AS assigneeId,schedule_kind AS scheduleKind,
     schedule_interval AS scheduleInterval,next_due AS nextDue,anchor_date AS anchorDate,
     weekdays_mask AS weekdaysMask,month_day AS monthDay,reminder_mode AS reminderMode,
     reminder_time AS reminderTime,missed_count AS missedCount,last_completed_at AS lastCompletedAt,
     last_completed_by AS lastCompletedBy,revision,created_at AS createdAt,updated_at AS updatedAt
-    FROM chores ORDER BY next_due,id`).all();
+    FROM chores WHERE group_id=? ORDER BY next_due,id`).all(groupId);
   const history = db.prepare(`SELECT id,chore_id AS choreId,title,assignee_id AS assigneeId,
     completed_by_id AS completedById,due_date AS dueDate,schedule_kind AS scheduleKind,
     completed_at AS completedAt,completed_on AS completedOn,(${CAN_UNDO}) AS canUndo
-    FROM completion_history ORDER BY completed_at DESC,id DESC`).all().map((row) => ({ ...row, canUndo: Boolean(row.canUndo) }));
+    FROM completion_history WHERE group_id=? ORDER BY completed_at DESC,id DESC`).all(groupId).map((row) => ({ ...row, canUndo: Boolean(row.canUndo) }));
   return {
     user,
-    users: [{ id: "D", name: "Dylan", initial: "D" }, { id: "M", name: "Mady", initial: "M" }],
+    groups, activeGroup: group,
+    users: group ? db.prepare(`SELECT u.id,u.name,u.initial,u.active FROM users u JOIN group_members m ON m.user_id=u.id WHERE m.group_id=? ORDER BY u.name,u.id`).all(group.id) : [],
     chores,
     history,
     household,

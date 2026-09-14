@@ -7,6 +7,9 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const state = {
     user: null,
+    groups: [],
+    groupId: new URL(location.href).searchParams.get("groupId") || null,
+    stateRequest: 0,
     users: [],
     chores: [],
     history: [],
@@ -85,7 +88,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
   }
 
   function ownerName(id) {
-    return state.users.find((user) => user.id === id)?.name || (id === "D" ? "Dylan" : "Mady");
+    return state.users.find((user) => user.id === id)?.name || "Former member";
   }
 
   function scheduleLabel(chore) {
@@ -114,7 +117,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
   }
 
   function canWrite() {
-    return state.online && Boolean(state.user);
+    return state.online && Boolean(state.user) && Boolean(state.groupId);
   }
 
   function pauseToast() {
@@ -155,6 +158,9 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     const method = options.method || "GET";
     const headers = new Headers(options.headers || {});
     if (method !== "GET") headers.set("Content-Type", "application/json");
+    if (state.groupId && /^\/api\/(state|events|chores|history)(?:[/?]|$)/.test(path)) {
+      const scoped = new URL(path, location.origin); scoped.searchParams.set("groupId", state.groupId); path = scoped.pathname + scoped.search;
+    }
     const response = await fetch(path, { ...options, method, headers, credentials: "same-origin" });
     let body = null;
     const text = await response.text();
@@ -176,7 +182,23 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
 
   function acceptState(data) {
     state.user = data.user;
+    state.groups = data.groups || [];
+    state.groupId = data.activeGroup?.id || null;
+    const groupSelect = $("#groupSelect");
+    groupSelect.innerHTML = state.groups.map((g) => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`).join("");
+    groupSelect.value = state.groupId || "";
+    groupSelect.disabled = state.groups.length < 2;
+    $("#groupTimezone").textContent = data.activeGroup?.timeZone || "Ask an administrator to add you to a group.";
+    $("#adminButton").hidden = !data.user?.isAdmin;
+    const groupUrl = new URL(location.href);
+    if (state.groupId) groupUrl.searchParams.set("groupId", state.groupId); else groupUrl.searchParams.delete("groupId");
+    history.replaceState(null, "", groupUrl);
     state.users = data.users || [];
+    $(".filter-bar").innerHTML = `<button class="filter-button" type="button" data-filter="all">Everyone</button>` + state.users.map((u) => `<button class="filter-button" type="button" data-filter="${escapeHtml(u.id)}">${escapeHtml(u.name)}</button>`).join("");
+    const assignee = $("#choreAssignee"); const selectedAssignee = assignee.value;
+    assignee.innerHTML = state.users.filter((u) => u.active).map((u) => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.name)}</option>`).join("");
+    if (state.users.some((u) => u.active && u.id === selectedAssignee)) assignee.value = selectedAssignee;
+    if (state.filter !== "all" && !state.users.some((u) => u.id === state.filter)) state.filter = "all";
     state.chores = Array.isArray(data.chores) ? data.chores : [];
     state.history = Array.isArray(data?.history) ? data.history : [];
     state.householdTimezone = data.household?.timeZone || "America/Los_Angeles";
@@ -188,12 +210,20 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
   }
 
   async function loadState({ silent = false } = {}) {
+    const generation = ++state.stateRequest;
     if (!silent) { state.loading = true; state.error = null; render(); }
     try {
-      acceptState(await request("/api/state"));
+      const result = await request("/api/state");
+      if (generation !== state.stateRequest) return;
+      acceptState(result);
       render();
       connectEvents();
     } catch (error) {
+      if (generation !== state.stateRequest) return;
+      if (error.status === 404 && state.groupId) {
+        stopEvents(); state.groupId = null; state.chores = []; state.history = []; state.users = [];
+        return loadState();
+      }
       if (error.status === 401) {
         stopEvents();
         location.replace("/login");
@@ -206,9 +236,9 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
   }
 
   function connectEvents() {
-    if (!state.user || !window.EventSource) return;
+    if (!state.user || !state.groupId || !window.EventSource) return;
     if (state.eventSource && state.eventSource.readyState !== window.EventSource.CLOSED) return;
-    const source = new EventSource("/api/events");
+    const source = new EventSource(`/api/events?groupId=${encodeURIComponent(state.groupId)}`);
     let opened = false;
     state.eventSource = source;
     source.addEventListener("change", () => loadState({ silent: true }));
@@ -218,7 +248,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
       updateConnection("Live");
       if (reconnected) loadState({ silent: true });
     });
-    source.addEventListener("error", () => updateConnection(state.online ? "Reconnecting" : "Offline"));
+    source.addEventListener("error", () => { updateConnection(state.online ? "Reconnecting" : "Offline"); if (state.online) loadState({ silent: true }); });
   }
 
   function stopEvents() {
@@ -238,6 +268,8 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     $$("#addChoreButton, #emptyAddButton, #saveChoreButton, #deleteChoreButton, #confirmDeleteButton, #logoutButton, #settingsForm button[type=submit], #passwordForm button[type=submit], [data-action=complete], [data-action=undo], [data-action=edit]").forEach((button) => {
       button.disabled = disabled || pendingWrites.has(`${button.dataset.action}:${button.dataset.id}`);
     });
+    $("#logoutButton").disabled = !state.online;
+    $("#groupSelect").disabled = state.groups.length < 2 || pendingWrites.size > 0;
     $("#toastUndo").disabled = disabled || pendingWrites.has(`undo:${toastCompletionId}`) || !state.history.some((record) => record.id === toastCompletionId && record.canUndo);
     if (disabled) $$("#pushButton, #pushTestButton").forEach((button) => { button.disabled = true; });
   }
@@ -286,11 +318,14 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     $("#lastUpdated").textContent = state.lastUpdated ? `Updated ${state.lastUpdated.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Waiting for the first refresh.";
     const emptyTitle = $("#emptyTitle");
     const emptyCopy = $("#emptyCopy");
-    if (state.chores.length === 0) {
+    if (!state.groupId) {
+      emptyTitle.textContent = "No group assigned";
+      emptyCopy.textContent = "Ask an administrator to add you to a group. Your account is ready.";
+    } else if (state.chores.length === 0) {
       emptyTitle.textContent = "Nothing here yet.";
       emptyCopy.textContent = "Add your first chore to get started.";
     } else {
-      const label = state.filter === "D" ? "Dylan" : state.filter === "M" ? "Mady" : "this view";
+      const label = ownerName(state.filter);
       emptyTitle.textContent = "All done for today";
       emptyCopy.textContent = state.filter === "all" ? "There’s nothing due right now." : `Nothing is due for ${label}.`;
     }
@@ -677,9 +712,10 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
   }
 
   async function logout() {
-    if (!canWrite()) { showToast("Reconnect before signing out.", "error"); return; }
+    if (!state.online || !state.user) { showToast("Reconnect before signing out.", "error"); return; }
+    if (window.ChoresNative) await window.ChoresNative.disable().catch(() => {});
     try { await request("/api/session", { method: "DELETE", body: "{}" }); } catch (error) { showToast(error.message, "error"); return; }
-    try { await (await navigator.serviceWorker?.ready)?.pushManager.getSubscription()?.then((subscription) => subscription?.unsubscribe()); } catch { /* The server subscription was already removed. */ }
+    if (!window.ChoresNative) try { const registration = await navigator.serviceWorker?.getRegistration(); const subscription = await registration?.pushManager.getSubscription(); await subscription?.unsubscribe(); } catch { /* Server subscription already removed. */ }
     stopEvents();
     location.replace("/login");
   }
@@ -708,7 +744,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
 
   async function saveSettings(event) {
     event.preventDefault();
-    if (!canWrite()) { showToast("Reconnect before saving settings.", "error"); return; }
+    if (!state.online || !state.user) { showToast("Reconnect before saving settings.", "error"); return; }
     const errorNode = $("#settingsError");
     errorNode.hidden = true;
     try {
@@ -723,7 +759,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
 
   async function savePassword(event) {
     event.preventDefault();
-    if (!canWrite()) { showToast("Reconnect before changing your password.", "error"); return; }
+    if (!state.online || !state.user) { showToast("Reconnect before changing your password.", "error"); return; }
     const form = $("#passwordForm");
     if (!form.reportValidity()) return;
     const errorNode = $("#passwordError");
@@ -757,6 +793,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
   }
 
   async function refreshPushState() {
+    if (window.ChoresNative) return window.ChoresNative.refresh();
     const status = $("#pushStatus");
     const button = $("#pushButton");
     const hint = $("#iosPushHint");
@@ -794,6 +831,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
   }
 
   async function togglePush() {
+    if (window.ChoresNative) return window.ChoresNative.toggle();
     if (!canWrite()) { showToast("Reconnect before changing push settings.", "error"); return; }
     const button = $("#pushButton");
     button.disabled = true;
@@ -818,6 +856,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
   }
 
   async function testPush() {
+    if (window.ChoresNative) return window.ChoresNative.test();
     const button = $("#pushTestButton");
     button.disabled = true;
     try { await jsonRequest("/api/push-test", "POST", {}); showToast("Test notification sent."); }
@@ -826,6 +865,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
   }
 
   async function registerServiceWorker() {
+    if (window.ChoresNative) return;
     if (!("serviceWorker" in navigator)) return;
     try { await navigator.serviceWorker.register("/sw.js"); } catch { showToast("Notifications could not be prepared on this browser.", "error"); }
   }
@@ -876,7 +916,13 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     $("#themeOptions").addEventListener("change", (event) => { if (event.target.name === "theme") applyTheme(event.target.value); });
     $("#scheduleKind").addEventListener("change", updateScheduleFields);
     $("#reminderMode").addEventListener("change", updateReminderFields);
-    $$(".filter-button").forEach((button) => button.addEventListener("click", () => { state.filter = button.dataset.filter; render(); }));
+    $(".filter-bar").addEventListener("click", (event) => { const button = event.target.closest("[data-filter]"); if (button) { state.filter = button.dataset.filter; render(); } });
+    $("#groupSelect").addEventListener("change", (event) => {
+      stopEvents(); dismissToast(); $$("dialog[open]").forEach((d) => closeDialog(d));
+      state.groupId = event.target.value; state.filter = "all"; state.calendarDate = null;
+      state.chores = []; state.history = []; state.users = []; loadState();
+    });
+    window.addEventListener("chores-admin-changed", () => loadState({ silent: true }));
     $$(".view-tab").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.view; render(); }));
     $(".view-tabs").addEventListener("keydown", (event) => {
       const tabs = $$(".view-tab");
@@ -927,7 +973,8 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     updateScheduleFields();
     updateReminderFields();
     render();
-    try { acceptState(await request("/api/state")); render(); connectEvents(); } catch (error) { if (error.status === 401) location.replace("/login"); else { state.loading = false; state.error = error.message; render(); } }
+    await loadState();
+    if (window.ChoresNative) window.ChoresNative.initialize().catch(() => {});
   }
 
   boot();

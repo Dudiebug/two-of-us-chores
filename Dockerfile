@@ -11,6 +11,7 @@ RUN pnpm install --frozen-lockfile --prod \
   && pnpm store prune
 COPY src ./src
 COPY public ./public
+COPY deploy ./deploy
 
 RUN mkdir -p /data && chown -R node:node /app /data "$COREPACK_HOME"
 USER node

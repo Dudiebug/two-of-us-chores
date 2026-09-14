@@ -1,3 +1,8 @@
+> **Chores 1.2:** configurable username/password accounts, administrator-managed private groups,
+> and native Android notifications. See [the upgrade/setup guide](docs/RELEASE_1.2.md).
+> New installations use the terminal account wizard, not preconfigured Dylan/Mady accounts.
+> The original two-account instructions below are retained as legacy deployment reference.
+
 # Two of Us Chores
 
 Two-user chore app for Dylan and Mady. It is one Node 24 process backed by SQLite, with server-sent events for live refresh and optional Web Push notifications.

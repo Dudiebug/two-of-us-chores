@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { parseEnv } from "node:util";
 import { openDatabase } from "../src/db.mjs";
+import { bootstrapAccounts } from "../deploy/bootstrap.mjs";
+import { passwordMatches } from "../src/security.mjs";
 import { writeConfig, validateConfig } from "../deploy/configure.mjs";
 
 const helper = new URL("../deploy/create-lxc-config.sh", import.meta.url).pathname;
@@ -91,7 +93,12 @@ test("shell-like password text stays literal and config symlinks are refused", a
   const password = `literal-$(touch ${marker})-password`;
   const result = run(answers.replaceAll("dylan-test-password", password));
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(parseEnv(await readFile(config, "utf8")).DYLAN_PASSWORD, password);
+  assert.equal(parseEnv(await readFile(config, "utf8")).DYLAN_PASSWORD, undefined);
+  const db = await openDatabase(":memory:");
+  await bootstrapAccounts(db, { admin: { username: "customadmin", password } });
+  const user = db.prepare("SELECT * FROM users WHERE username='customadmin'").get();
+  assert.ok(await passwordMatches(password, user.password_salt, user.password_hash));
+  db.close();
   await assert.rejects(stat(marker), { code: "ENOENT" });
   const link = join(directory, "link.env");
   await symlink(config, link);
@@ -99,7 +106,7 @@ test("shell-like password text stays literal and config symlinks are refused", a
   const brokenLink = join(directory, "broken-link.env");
   await symlink(join(directory, "missing.env"), brokenLink);
   assert.throws(() => writeConfig(brokenLink, { APP_ORIGIN: "https://other.example.com" }), /regular file/);
-  assert.equal(parseEnv(await readFile(config, "utf8")).DYLAN_PASSWORD, password);
+  assert.equal(parseEnv(await readFile(config, "utf8")).DYLAN_PASSWORD, undefined);
 });
 
 test("invalid ports, origins, data paths and mismatched push keys cannot replace config", async (t) => {

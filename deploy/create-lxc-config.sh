@@ -54,12 +54,5 @@ SETUP_CONTACT=''
 if [[ "$SETUP_PUSH" == yes ]]; then
   SETUP_CONTACT="$(prompt_default 'Push contact email (or HTTPS contact URL)' "${defaults[5]}")"
 fi
-SETUP_DYLAN_PASSWORD=''
-SETUP_MADY_PASSWORD=''
-if [[ "${defaults[6]}" == new ]]; then
-  SETUP_DYLAN_PASSWORD="$(read_password Dylan)"
-  SETUP_MADY_PASSWORD="$(read_password Mady)"
-  [[ "$SETUP_DYLAN_PASSWORD" != "$SETUP_MADY_PASSWORD" ]] || { echo 'Use different passwords for each person.' >&2; exit 1; }
-fi
-export SETUP_ORIGIN SETUP_HOST SETUP_TIMEZONE SETUP_PORT SETUP_PUSH SETUP_CONTACT SETUP_DYLAN_PASSWORD SETUP_MADY_PASSWORD
+export SETUP_ORIGIN SETUP_HOST SETUP_TIMEZONE SETUP_PORT SETUP_PUSH SETUP_CONTACT
 node "$SCRIPT_DIR/configure.mjs" save "$CONFIG_PATH"

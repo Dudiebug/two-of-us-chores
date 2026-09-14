@@ -43,7 +43,7 @@ for (const kind of ["once", "daily", "weekly", "monthly"]) {
     assert.equal("undo_snapshot" in record, false);
     await app.login("M");
     const responses = await Promise.all([app.undo(), app.undo()]);
-    assert.deepEqual(responses.map((r) => r.status).sort(), [204, 409]);
+    assert.deepEqual(responses.map((r) => r.status).sort(), [204, 404]);
     const restored = app.db.prepare("SELECT * FROM chores WHERE id=?").get(app.id);
     const { revision, updated_at, ...details } = restored;
     const { revision: oldRevision, updated_at: oldUpdated, ...original } = app.before;
@@ -219,7 +219,7 @@ test("activity notifications reach only the other person who opted in", async (t
   assert.equal(sent.length, 1);
 
   assert.equal((await app.request("/api/push-test", { method: "POST", body: "{}" })).status, 204);
-  assert.deepEqual(sent[1].slice(0, 3), ["D", "Two of Us", "Push notifications are working on this device."]);
+  assert.deepEqual(sent[1].slice(0, 3), ["D", "Chores", "Push notifications are working on this device."]);
 });
 
 test("API validates chore input and rejects stale atomic completion", async (t) => {

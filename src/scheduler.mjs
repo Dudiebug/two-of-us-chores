@@ -1,8 +1,9 @@
 import { daysBetween, localDateTime, shiftSeries } from "./recurrence.mjs";
 import { transaction } from "./db.mjs";
 
-export function rolloverMissed(db, today, now = new Date().toISOString()) {
-  const rows = db.prepare("SELECT * FROM chores WHERE next_due < ? ORDER BY id").all(today);
+export function rolloverMissed(db, today, now = new Date().toISOString(), groupId = null) {
+  const rows = groupId ? db.prepare("SELECT * FROM chores WHERE group_id=? AND next_due < ? ORDER BY id").all(groupId, today)
+    : db.prepare("SELECT * FROM chores WHERE next_due < ? ORDER BY id").all(today);
   if (!rows.length) return [];
   return transaction(db, () => rows.map((row) => {
     const days = daysBetween(row.next_due, today);
@@ -21,37 +22,41 @@ export function createScheduler({ db, timeZone, send, changed = () => {}, now = 
     if (running) return;
     running = true;
     try {
-      const local = localDateTime(timeZone, now());
-      const shifted = rolloverMissed(db, local.date);
-      if (shifted.length) changed();
-      const users = db.prepare("SELECT id,digest_time,missed_alert_time,default_reminder_time FROM users").all();
+      const groups = db.prepare("SELECT id,time_zone FROM groups WHERE archived_at IS NULL").all();
+      for (const group of groups) {
+      const local = localDateTime(group.time_zone || timeZone, now());
+      const shifted = rolloverMissed(db, local.date, now().toISOString(), group.id);
+      if (shifted.length) changed(null, group.id);
+      const users = db.prepare(`SELECT u.id,u.digest_time,u.missed_alert_time,u.default_reminder_time FROM users u
+        JOIN group_members m ON m.user_id=u.id WHERE m.group_id=? AND u.active=1`).all(group.id);
       for (const user of users) {
         const missedSlot = recentSlot(local, user.missed_alert_time);
         if (missedSlot) {
           const chores = db.prepare(`SELECT title FROM chores
-            WHERE assignee_id=? AND missed_count>0 AND next_due<=? ORDER BY next_due,id`).all(user.id, missedSlot.date);
+            WHERE group_id=? AND assignee_id=? AND missed_count>0 AND next_due<=? ORDER BY next_due,id`).all(group.id, user.id, missedSlot.date);
           if (chores.length) {
-            await tryOnce(`missed:${user.id}:${missedSlot.date}`, db, () => send(user.id, "Missed chores", listBody(chores), { tag: `missed-${missedSlot.date}` }));
+            await tryOnce(`missed:${group.id}:${user.id}:${missedSlot.date}`, db, () => send(user.id, "Missed chores", listBody(chores), { groupId: group.id, url: `/app?groupId=${group.id}`, tag: `missed-${group.id}-${missedSlot.date}` }));
           }
         }
         const digestSlot = recentSlot(local, user.digest_time);
         if (digestSlot) {
           const chores = db.prepare(`SELECT title FROM chores
-            WHERE assignee_id=? AND next_due<=? ORDER BY next_due,id`).all(user.id, digestSlot.date);
+            WHERE group_id=? AND assignee_id=? AND next_due<=? ORDER BY next_due,id`).all(group.id, user.id, digestSlot.date);
           if (chores.length) {
-            await tryOnce(`digest:${user.id}:${digestSlot.date}`, db, () => send(user.id, "Today at home", listBody(chores), { tag: `digest-${digestSlot.date}` }));
+            await tryOnce(`digest:${group.id}:${user.id}:${digestSlot.date}`, db, () => send(user.id, "Today at home", listBody(chores), { groupId: group.id, url: `/app?groupId=${group.id}`, tag: `digest-${group.id}-${digestSlot.date}` }));
           }
         }
         const candidates = db.prepare(`SELECT id,title,next_due,reminder_mode,reminder_time FROM chores
-          WHERE assignee_id=? AND next_due BETWEEN ? AND ? AND reminder_mode!='off' ORDER BY id`).all(user.id, previousDate(local.date), local.date);
+          WHERE group_id=? AND assignee_id=? AND next_due BETWEEN ? AND ? AND reminder_mode!='off' ORDER BY id`).all(group.id, user.id, previousDate(local.date), local.date);
         for (const chore of candidates) {
           const time = chore.reminder_mode === "override" ? chore.reminder_time : user.default_reminder_time;
           const slot = recentSlot(local, time);
           if (slot && chore.next_due === slot.date) {
-            await tryOnce(`chore:${user.id}:${chore.id}:${chore.next_due}`, db,
-              () => send(user.id, "Chore reminder", chore.title, { tag: `chore-${chore.id}-${chore.next_due}` }));
+            await tryOnce(`chore:${group.id}:${user.id}:${chore.id}:${chore.next_due}`, db,
+              () => send(user.id, "Chore reminder", chore.title, { groupId: group.id, url: `/app?groupId=${group.id}`, tag: `chore-${group.id}-${chore.id}-${chore.next_due}` }));
           }
         }
+      }
       }
     } finally {
       running = false;

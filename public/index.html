@@ -9,8 +9,8 @@
     <link rel="apple-touch-icon" href="/icon-192.png">
     <link rel="mask-icon" href="/icon.svg" color="#b95263">
     <link rel="icon" href="/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/styles.css?v=12">
-    <title>Two of Us · Chores</title>
+    <link rel="stylesheet" href="/styles.css?v=13">
+    <title>Chores</title>
   </head>
   <body>
     <a class="skip-link" href="#mainContent">Skip to chores</a>
@@ -23,15 +23,16 @@
     <main id="mainContent">
       <section class="app-view" id="appView" aria-label="Chore list">
         <header class="topbar shell">
-          <a class="wordmark" href="/app" aria-label="Two of Us, home">
-            <span>two of us</span>
+          <a class="wordmark" href="/app" aria-label="Chores, home">
+            <img src="/icon.svg" width="32" height="32" alt=""><span>Chores</span>
           </a>
-          <nav class="top-actions" aria-label="App actions">
+          <nav class="top-actions" aria-label="App actions"><button class="button button-quiet" id="adminButton" type="button" hidden>Admin</button>
             <button class="icon-button" id="settingsButton" type="button" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.56 9.28L20.86 10.44L20.86 13.56L18.56 14.72L19.37 17.16L17.16 19.37L14.72 18.56L13.56 20.86L10.44 20.86L9.28 18.56L6.84 19.37L4.63 17.16L5.44 14.72L3.14 13.56L3.14 10.44L5.44 9.28L4.63 6.84L6.84 4.63L9.28 5.44L10.44 3.14L13.56 3.14L14.72 5.44L17.16 4.63L19.37 6.84Z"/><circle cx="12" cy="12" r="3"/></svg></button>
           </nav>
         </header>
 
         <div class="shell dashboard">
+          <div class="group-toolbar"><label for="groupSelect">Group</label><select id="groupSelect" aria-label="Active group"></select><span id="groupTimezone" class="field-hint"></span></div>
           <section class="dashboard-heading" aria-labelledby="dashboardTitle">
             <div>
               <p class="dashboard-date" id="dashboardDate">Today</p>
@@ -50,8 +51,7 @@
           <div class="dashboard-toolbar">
             <div class="filter-bar" role="group" aria-label="Filter chores by person">
               <button class="filter-button is-active" type="button" data-filter="all" aria-pressed="true">Everyone</button>
-              <button class="filter-button" type="button" data-filter="D" aria-pressed="false">Dylan</button>
-              <button class="filter-button" type="button" data-filter="M" aria-pressed="false">Mady</button>
+
             </div>
             <p class="list-summary" id="listSummary">Loading…</p>
           </div>
@@ -125,8 +125,7 @@
             <div class="field">
               <label for="choreAssignee">For</label>
               <select id="choreAssignee" name="assigneeId" required>
-                <option value="D">Dylan</option>
-                <option value="M">Mady</option>
+
               </select>
             </div>
             <div class="field">
@@ -238,8 +237,8 @@
               <label class="check-field"><input type="checkbox" id="defaultReminderEnabled"><span>Default chore reminder</span></label>
               <input class="time-input" id="defaultReminderTime" type="time" aria-label="Default chore reminder time">
             </div>
-            <label class="check-field"><input type="checkbox" id="activityNotifications"><span>Notify me when the other person changes chores</span></label>
-            <p class="field-hint">Times use the household timezone.</p>
+            <label class="check-field"><input type="checkbox" id="activityNotifications"><span>Notify me when another group member changes chores</span></label>
+            <p class="field-hint">Times use each group’s timezone. Your notification-time preferences apply to all your groups.</p>
             <p class="form-message" id="settingsError" role="alert" hidden></p>
             <div class="inline-actions"><button class="button button-secondary" type="submit">Save times</button><span class="success-text" id="settingsSuccess" hidden>Saved.</span></div>
           </form>
@@ -266,13 +265,29 @@
           <div><p class="eyebrow">Permanent change</p><h2 id="confirmTitle">Remove this chore?</h2></div>
           <button class="icon-button" id="closeConfirmButton" type="button" aria-label="Close confirmation dialog">×</button>
         </div>
-        <div class="dialog-body"><p id="confirmCopy">This removes the chore for both people.</p></div>
+        <div class="dialog-body"><p id="confirmCopy">This removes the chore for everyone in this group.</p></div>
         <div class="dialog-actions"><button class="button button-quiet" id="cancelConfirmButton" type="button">Keep it</button><button class="button button-danger" id="confirmDeleteButton" type="button">Remove chore</button></div>
       </div>
     </dialog>
 
+    <dialog class="dialog" id="adminDialog" aria-labelledby="adminTitle">
+      <div class="dialog-card"><div class="dialog-header"><div><p class="eyebrow">Instance administration</p><h2 id="adminTitle">Users &amp; groups</h2></div><button id="closeAdmin" type="button" class="icon-button" aria-label="Close administration">×</button></div>
+      <div class="dialog-body"><p class="field-hint">Manage accounts and membership here. Chores remain private to group members, including for administrators.</p>
+      <p id="adminMessage" role="status" aria-live="polite"></p>
+      <section class="settings-section"><h3>Create user</h3><form id="adminUserForm" class="admin-form">
+        <label>Username<input name="username" required minlength="3" maxlength="40" autocomplete="off" autocapitalize="none"></label>
+        <label>Display name<input name="name" required maxlength="80"></label>
+        <label>Initial password<input name="password" type="password" required minlength="12" maxlength="200" autocomplete="new-password"></label>
+        <label class="check-field"><input name="isAdmin" type="checkbox"> Administrator</label><button class="button button-primary" type="submit">Create user</button></form></section>
+      <section class="settings-section"><h3>Create group</h3><form id="adminGroupForm" class="admin-form"><label>Group name<input name="name" required maxlength="80"></label><label>Timezone<input name="timeZone" value="America/Los_Angeles" required maxlength="100"></label><button class="button button-secondary" type="submit">Create group</button></form></section>
+      <section class="settings-section"><h3>Users</h3><div id="adminUsers" class="admin-list"></div></section>
+      <section class="settings-section"><h3>Groups &amp; membership</h3><div id="adminGroups" class="admin-list"></div></section>
+      </div></div>
+    </dialog>
+    <script src="/admin.js" defer></script>
+    <script src="/native-bridge.js" defer></script>
     <script src="/login.js" defer></script>
-    <script src="/native-app.js?v=1.1.0" defer></script>
-    <script src="/app.js?v=12" type="module"></script>
+    <script src="/native-app.js?v=1.2.0" defer></script>
+    <script src="/app.js?v=13" type="module"></script>
   </body>
 </html>

@@ -81,7 +81,7 @@ test("authenticated UI is a dashboard with Today, Calendar, and History tools", 
   assert.match(script, /const recurring = kind !== "once"/);
   assert.match(script, /\$\("#weekdayPicker"\)\.hidden = kind !== "weekly"/);
 
-  const appScriptTag = [...html.matchAll(/<script\b[^>]*>/gi)].map(([tag]) => tag).find((tag) => extractAttribute(tag, "src") === "/app.js?v=12");
+  const appScriptTag = [...html.matchAll(/<script\b[^>]*>/gi)].map(([tag]) => tag).find((tag) => extractAttribute(tag, "src") === "/app.js?v=13");
   assert.ok(appScriptTag, "index.html should load app.js");
   assert.equal(extractAttribute(appScriptTag, "type"), "module");
   assert.match(script, /import\s*\{\s*occurrencesInRange\s*\}\s*from\s*["']\.\/calendar-recurrence\.js["']/);

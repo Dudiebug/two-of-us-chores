@@ -1,3 +1,5 @@
+import { requireGroup, requireAssignee, groupsForUser, usernameKey } from "./groups.mjs";
+import { adminRequest } from "./admin.mjs";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, relative, resolve } from "node:path";
@@ -14,8 +16,8 @@ const SESSION_MS = 30 * 86400_000;
 const LOGIN_WINDOW_MS = 15 * 60_000;
 const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const staticCache = new Map();
-const PUBLIC_FILES = new Set(["/login.css", "/login.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/sw.js", "/offline.html", "/.well-known/assetlinks.json"]);
-const PRIVATE_FILES = new Set(["/app.js", "/calendar-recurrence.js", "/styles.css", "/native-app.js"]);
+const PUBLIC_FILES = new Set(["/native-bridge.js", "/login.css", "/login.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/sw.js", "/offline.html", "/.well-known/assetlinks.json"]);
+const PRIVATE_FILES = new Set(["/app.js", "/calendar-recurrence.js", "/styles.css", "/native-app.js", "/admin.js"]);
 
 export async function createApp(options = {}) {
   const env = { ...process.env, ...options.env };
@@ -30,13 +32,18 @@ export async function createApp(options = {}) {
     env.DATABASE_PATH || join(env.DATA_DIR || join(ROOT, "data"), "chores.db"),
     env,
   );
+  if (!db.prepare("SELECT 1 FROM users LIMIT 1").get()) throw new Error("No accounts configured. Run node deploy/bootstrap.mjs before starting Chores.");
   const push = options.push || createPush(db, env);
   const clock = options.now || (() => new Date());
   const clients = new Map();
   const throttle = new Map();
-  const broadcast = (targetUserId = null) => {
+  const broadcast = (targetUserId = null, groupId = null) => {
     for (const [res, client] of clients) {
+      if (!db.prepare("SELECT 1 FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND u.active=1 AND s.expires_at>?").get(client.tokenHash, new Date().toISOString()) || !groupsForUser(db, client.userId).some((g) => g.id === client.groupId)) {
+        clients.delete(res); res.end(); continue;
+      }
       if (targetUserId && client.userId !== targetUserId) continue;
+      if (groupId && client.groupId !== groupId) continue;
       try {
         if (!res.writableEnded) res.write(`event: change\ndata: {"at":${Date.now()}}\n\n`);
       } catch {
@@ -47,17 +54,18 @@ export async function createApp(options = {}) {
   const timeZone = env.HOUSEHOLD_TIMEZONE || "America/Los_Angeles";
   const sendWebPush = push.send.bind(push);
   const send = async (userId, title, body, options = {}) => {
+    if (!db.prepare("SELECT 1 FROM users WHERE id=? AND active=1").get(userId)) return false;
+    if (options.groupId && !groupsForUser(db, userId).some((g) => g.id === options.groupId)) return false;
     const queued = queueNativeNotification(db, userId, title, body, options);
-    const delivered = await sendWebPush(userId, title, body, options);
+    let delivered = false;
+    try { delivered = await sendWebPush(userId, title, body, options); } catch (error) { if (!queued) throw error; }
     return queued || delivered;
   };
-  const notify = (actorId, title, body, key) => activityNotification(db, send, actorId, title, body, key);
+  const notify = (actorId, title, body, key, groupId) => activityNotification(db, send, actorId, title, body, key, groupId);
   const scheduler = createScheduler({ db, timeZone, send, changed: broadcast, now: clock });
   const cleanupTimer = setInterval(() => purgeExpiredSessions(db), 60_000);
   cleanupTimer.unref?.();
   purgeExpiredSessions(db);
-  const startupNow = clock();
-  if (rolloverMissed(db, localDateTime(timeZone, startupNow).date).length) broadcast();
   await scheduler.tick();
 
   const server = createServer(async (req, res) => {
@@ -87,32 +95,49 @@ export async function createApp(options = {}) {
         res.setHeader("Set-Cookie", sessionCookie("", !localInsecure, 0));
         return noContent(res);
       }
-      if (req.method === "GET" && path === "/api/state") {
-        return json(res, 200, publicState(db, session.userId, {
-          timeZone,
-          today: localDateTime(timeZone, clock()).date,
-        }));
+      if (path.startsWith("/api/admin/")) {
+        const data = req.method === "GET" ? null : await readJson(req);
+        return json(res, 200, await adminRequest(db, session.userId, req.method, path, data, () => broadcast()));
       }
-      if (req.method === "GET" && path === "/api/events") return events(req, res, session, clients);
+      const selected = url.searchParams.get("groupId");
+      if (req.method === "GET" && path === "/api/state") {
+        const group = selected ? requireGroup(db, session.userId, selected) : groupsForUser(db, session.userId)[0];
+        const zone = group?.timeZone || timeZone;
+        return json(res, 200, publicState(db, session.userId, {
+          timeZone: zone, today: localDateTime(zone, clock()).date,
+        }, group?.id));
+      }
+      const groupScoped = path === "/api/events" || path.startsWith("/api/chores") || path.startsWith("/api/history");
+      const group = groupScoped ? requireGroup(db, session.userId, selected) : null;
+      if (group) req.choreGroupId = group.id;
+      const groupChanged = (userId = null) => broadcast(userId, group?.id);
+      const groupNotify = (actorId, title, body, key) => notify(actorId, title, body, key, group.id);
+      if (req.method === "GET" && path === "/api/events") return events(req, res, { ...session, groupId: group.id }, clients);
       if (req.method === "POST" && path === "/api/native-device") return registerNativeDevice(req, res, db, session);
       if (req.method === "DELETE" && path === "/api/native-device") return removeNativeDevice(req, res, db, session);
       if (req.method === "GET" && path === "/api/push-key") {
         return json(res, 200, { configured: push.configured, publicKey: push.publicKey });
       }
+      if (req.method === "POST" && path === "/api/native-test") {
+        const body = await readJson(req);
+        if (!validNativeDeviceId(body.deviceId) || !db.prepare("SELECT 1 FROM native_devices WHERE device_id=? AND user_id=? AND session_hash=?").get(body.deviceId, session.userId, session.tokenHash)) throw Object.assign(new Error("Enable native notifications first"), { status: 409 });
+        queueNativeNotification(db, session.userId, "Chores", "Native notifications are working on this device.", {});
+        return noContent(res);
+      }
       if (req.method === "POST" && path === "/api/push-test") return await pushTest(res, send, session.userId);
-      if (req.method === "POST" && path === "/api/chores") return await createChore(req, res, db, broadcast, session.userId, notify);
+      if (req.method === "POST" && path === "/api/chores") return await createChore(req, res, db, groupChanged, session.userId, groupNotify);
       if (req.method === "PATCH" && /^\/api\/chores\/\d+$/.test(path)) {
-        return await editChore(req, res, db, Number(path.split("/").pop()), broadcast, session.userId, notify);
+        return await editChore(req, res, db, Number(path.split("/").pop()), groupChanged, session.userId, groupNotify, group.id);
       }
       if (req.method === "DELETE" && /^\/api\/chores\/\d+$/.test(path)) {
-        return deleteChore(res, db, Number(path.split("/").pop()), broadcast, session.userId, notify);
+        return await deleteChore(res, db, Number(path.split("/").pop()), groupChanged, session.userId, groupNotify, group.id);
       }
       if (req.method === "POST" && /^\/api\/chores\/\d+\/complete$/.test(path)) {
-        return await completeChore(req, res, db, Number(path.split("/")[3]), session.userId, broadcast, timeZone, clock, notify);
+        return await completeChore(req, res, db, Number(path.split("/")[3]), session.userId, groupChanged, group.timeZone, clock, groupNotify);
       }
       if (req.method === "POST" && /^\/api\/history\/\d+\/undo$/.test(path)) {
         await readJson(req);
-        return await undoCompletion(res, db, Number(path.split("/")[3]), session.userId, broadcast, clock, notify);
+        return await undoCompletion(res, db, Number(path.split("/")[3]), session.userId, groupChanged, clock, groupNotify, group.id);
       }
       if (req.method === "PATCH" && path === "/api/settings") return await updateSettings(req, res, db, session.userId, broadcast);
       if (req.method === "PATCH" && path === "/api/password") return await changePassword(req, res, db, session, clients);
@@ -139,14 +164,18 @@ export async function createApp(options = {}) {
 
 async function login(req, res, db, localInsecure, throttle) {
   const body = await readJson(req);
-  if (!isRecord(body) || !["D", "M"].includes(body.userId) || typeof body.password !== "string"
+  if (!isRecord(body) || (typeof body.username !== "string" && typeof body.userId !== "string") || typeof body.password !== "string"
     || body.password.length > 200) throw bad("Invalid credentials");
-  const key = `${req.socket.remoteAddress || "unknown"}:${body.userId}`;
+  const name = usernameKey(body.username || body.userId);
+  if (!name || name.length > 40) throw bad("Invalid credentials");
+  // Bound keys and rate-limit by source too; unknown usernames get the same error.
+  if (throttle.size > 10000) throw Object.assign(new Error("Too many attempts. Try again later."), { status: 429 });
+  const key = `${req.socket.remoteAddress || "unknown"}`;
   const state = throttle.get(key) || { count: 0, since: Date.now() };
   if (Date.now() - state.since > LOGIN_WINDOW_MS) Object.assign(state, { count: 0, since: Date.now() });
   if (state.count >= 8) throw Object.assign(new Error("Too many attempts. Try again later."), { status: 429 });
 
-  const user = db.prepare("SELECT * FROM users WHERE id=?").get(body.userId);
+  const user = body.username !== undefined ? db.prepare("SELECT * FROM users WHERE username=? COLLATE NOCASE AND active=1").get(name) : db.prepare("SELECT * FROM users WHERE id=? AND active=1").get(body.userId);
   if (!user || !(await passwordMatches(body.password, user.password_salt, user.password_hash))) {
     state.count += 1;
     throttle.set(key, state);
@@ -157,9 +186,9 @@ async function login(req, res, db, localInsecure, throttle) {
   const now = new Date();
   purgeExpiredSessions(db, now.toISOString());
   db.prepare("INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES (?,?,?,?)")
-    .run(session.hash, body.userId, new Date(now.getTime() + SESSION_MS).toISOString(), now.toISOString());
+    .run(session.hash, user.id, new Date(now.getTime() + SESSION_MS).toISOString(), now.toISOString());
   res.setHeader("Set-Cookie", sessionCookie(session.token, !localInsecure));
-  return json(res, 200, { user: { id: user.id, name: user.name, initial: user.initial } });
+  return json(res, 200, { user: { id: user.id, username: user.username, name: user.name, initial: user.initial, isAdmin: Boolean(user.is_admin) } });
 }
 
 function authenticate(req, db) {
@@ -167,70 +196,75 @@ function authenticate(req, db) {
   const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   if (!token || token.length > 256) return null;
   const hash = tokenHash(token);
-  const row = db.prepare("SELECT user_id,expires_at FROM sessions WHERE token_hash=? AND expires_at>? ")
+  const row = db.prepare("SELECT s.user_id,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>? AND u.active=1 ")
     .get(hash, new Date().toISOString());
   return row ? { userId: row.user_id, tokenHash: hash, expiresAt: row.expires_at } : null;
 }
 
 async function createChore(req, res, db, changed, userId, notify) {
   const chore = validatedChore(await readJson(req));
+  requireGroup(db, userId, req.choreGroupId);
+  requireAssignee(db, req.choreGroupId, chore.assigneeId);
   const now = new Date().toISOString();
-  const result = db.prepare(`INSERT INTO chores(title,assignee_id,schedule_kind,schedule_interval,next_due,anchor_date,
-    weekdays_mask,month_day,reminder_mode,reminder_time,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(chore.title, chore.assigneeId, chore.schedule_kind, chore.schedule_interval, chore.next_due, chore.anchor_date,
+  const result = db.prepare(`INSERT INTO chores(group_id,title,assignee_id,schedule_kind,schedule_interval,next_due,anchor_date,
+    weekdays_mask,month_day,reminder_mode,reminder_time,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(req.choreGroupId, chore.title, chore.assigneeId, chore.schedule_kind, chore.schedule_interval, chore.next_due, chore.anchor_date,
       chore.weekdays_mask, chore.month_day, chore.reminderMode, chore.reminderTime, now, now);
   changed();
-  await notify(userId, "Chore added", `${userName(userId)} added ${chore.title} for ${userName(chore.assigneeId)}.`, `create:${result.lastInsertRowid}`);
+  await notify(userId, "Chore added", `${userName(db, userId)} added ${chore.title} for ${userName(db, chore.assigneeId)}.`, `create:${result.lastInsertRowid}`);
   return json(res, 201, { id: Number(result.lastInsertRowid) });
 }
 
-async function editChore(req, res, db, id, changed, userId, notify) {
-  const current = db.prepare("SELECT * FROM chores WHERE id=?").get(id);
+async function editChore(req, res, db, id, changed, userId, notify, groupId) {
+  const current = db.prepare("SELECT * FROM chores WHERE id=? AND group_id=?").get(id, groupId);
   if (!current) throw notFound();
   const body = await readJson(req);
   const chore = validatedChore(body);
+  requireGroup(db, userId, groupId);
+  requireAssignee(db, groupId, chore.assigneeId);
   const hasRevision = Object.prototype.hasOwnProperty.call(body, "revision");
   if (hasRevision && (!Number.isInteger(body.revision) || body.revision < 1)) throw bad("Revision is required");
   const now = new Date().toISOString();
   const result = db.prepare(`UPDATE chores SET title=?,assignee_id=?,schedule_kind=?,schedule_interval=?,next_due=?,anchor_date=?,
     weekdays_mask=?,month_day=?,reminder_mode=?,reminder_time=?,missed_count=0,revision=revision+1,updated_at=?
-    WHERE id=?${hasRevision ? " AND revision=?" : ""}`)
+    WHERE id=? AND group_id=?${hasRevision ? " AND revision=?" : ""}`)
     .run(chore.title, chore.assigneeId, chore.schedule_kind, chore.schedule_interval, chore.next_due, chore.anchor_date,
-      chore.weekdays_mask, chore.month_day, chore.reminderMode, chore.reminderTime, now, id,
+      chore.weekdays_mask, chore.month_day, chore.reminderMode, chore.reminderTime, now, id, groupId,
       ...(hasRevision ? [body.revision] : []));
   if (!result.changes) throw conflict();
   changed();
   if (choreChanged(current, chore)) {
-    const action = current.assignee_id !== chore.assigneeId ? `assigned ${chore.title} to ${userName(chore.assigneeId)}` : `updated ${chore.title}`;
-    await notify(userId, "Chore updated", `${userName(userId)} ${action}.`, `edit:${id}:${current.revision}`);
+    const action = current.assignee_id !== chore.assigneeId ? `assigned ${chore.title} to ${userName(db, chore.assigneeId)}` : `updated ${chore.title}`;
+    await notify(userId, "Chore updated", `${userName(db, userId)} ${action}.`, `edit:${id}:${current.revision}`);
   }
   return noContent(res);
 }
 
-async function deleteChore(res, db, id, changed, userId, notify) {
-  const current = db.prepare("SELECT title FROM chores WHERE id=?").get(id);
-  if (!current || !db.prepare("DELETE FROM chores WHERE id=?").run(id).changes) throw notFound();
+async function deleteChore(res, db, id, changed, userId, notify, groupId) {
+  const current = db.prepare("SELECT title FROM chores WHERE id=? AND group_id=?").get(id, groupId);
+  if (!current || !db.prepare("DELETE FROM chores WHERE id=? AND group_id=?").run(id, groupId).changes) throw notFound();
   changed();
-  await notify(userId, "Chore removed", `${userName(userId)} removed ${current.title}.`, `delete:${id}`);
+  await notify(userId, "Chore removed", `${userName(db, userId)} removed ${current.title}.`, `delete:${id}`);
   return noContent(res);
 }
 
 async function completeChore(req, res, db, id, userId, changed, timeZone, now, notify) {
   const body = await readJson(req);
   if (!isRecord(body) || !Number.isInteger(body.revision) || body.revision < 1) throw bad("Revision is required");
+  requireGroup(db, userId, req.choreGroupId);
   const outcome = transaction(db, () => {
     const completedAt = now().toISOString();
     const completedOn = localDateTime(timeZone, new Date(completedAt)).date;
-    const chore = db.prepare("SELECT * FROM chores WHERE id=?").get(id);
+    const chore = db.prepare("SELECT * FROM chores WHERE id=? AND group_id=?").get(id, req.choreGroupId);
     if (!chore) throw notFound();
     if (chore.revision !== body.revision) throw conflict();
     const recordCompletion = () => Number(db.prepare(`INSERT INTO completion_history
-      (chore_id,title,assignee_id,completed_by_id,due_date,schedule_kind,completed_at,completed_on,undo_snapshot,undo_revision)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      (chore_id,title,assignee_id,completed_by_id,due_date,schedule_kind,completed_at,completed_on,undo_snapshot,undo_revision,group_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
       .run(id, chore.title, chore.assignee_id, userId, chore.next_due, chore.schedule_kind, completedAt, completedOn,
-        JSON.stringify(chore), chore.revision + 1).lastInsertRowid);
+        JSON.stringify(chore), chore.revision + 1, req.choreGroupId).lastInsertRowid);
     if (chore.schedule_kind === "once") {
-      const result = db.prepare("DELETE FROM chores WHERE id=? AND revision=?").run(id, body.revision);
+      const result = db.prepare("DELETE FROM chores WHERE id=? AND revision=? AND group_id=?").run(id, body.revision, req.choreGroupId);
       if (!result.changes) throw conflict();
       return { removed: true, title: chore.title, completionId: recordCompletion() };
     }
@@ -239,23 +273,27 @@ async function completeChore(req, res, db, id, userId, changed, timeZone, now, n
       : chore;
     const nextDue = nextOccurrence(effective);
     const result = db.prepare(`UPDATE chores SET next_due=?,missed_count=0,last_completed_at=?,last_completed_by=?,
-      anchor_date=?,weekdays_mask=?,month_day=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?`)
+      anchor_date=?,weekdays_mask=?,month_day=?,revision=revision+1,updated_at=? WHERE id=? AND revision=? AND group_id=?`)
       .run(nextDue, completedAt, userId, effective.anchor_date, effective.weekdays_mask, effective.month_day,
-        completedAt, id, body.revision);
+        completedAt, id, body.revision, req.choreGroupId);
     if (!result.changes) throw conflict();
     return { nextDue, title: chore.title, completionId: recordCompletion() };
   });
   changed();
-  await notify(userId, "Chore completed", `${userName(userId)} completed ${outcome.title || "a chore"}.`, `complete:${id}:${body.revision}`);
+  await notify(userId, "Chore completed", `${userName(db, userId)} completed ${outcome.title || "a chore"}.`, `complete:${id}:${body.revision}`);
   delete outcome.title;
   return json(res, 200, outcome);
 }
 
-async function undoCompletion(res, db, id, userId, changed, now, notify) {
+async function undoCompletion(res, db, id, userId, changed, now, notify, groupId) {
+  requireGroup(db, userId, groupId);
+  if (!db.prepare("SELECT 1 FROM completion_history WHERE id=? AND group_id=?").get(id, groupId)) throw notFound();
   const title = transaction(db, () => {
-    const record = db.prepare(`SELECT * FROM completion_history WHERE id=? AND (${CAN_UNDO})`).get(id);
+    const record = db.prepare(`SELECT * FROM completion_history WHERE id=? AND group_id=? AND (${CAN_UNDO})`).get(id, groupId);
     if (!record) throw Object.assign(new Error("This completion can no longer be undone. Refresh the list."), { status: 409 });
     const chore = JSON.parse(record.undo_snapshot);
+    if (chore.group_id !== groupId) throw conflict();
+    requireAssignee(db, groupId, chore.assignee_id);
     chore.revision = record.undo_revision + 1;
     chore.updated_at = now().toISOString();
     const columns = db.prepare("PRAGMA table_info(chores)").all().map(({ name }) => name);
@@ -263,15 +301,15 @@ async function undoCompletion(res, db, id, userId, changed, now, notify) {
       db.prepare(`INSERT INTO chores (${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")})`).run(...columns.map((column) => chore[column]));
     } else {
       const fields = columns.filter((column) => column !== "id");
-      const result = db.prepare(`UPDATE chores SET ${fields.map((column) => `${column}=?`).join(",")} WHERE id=? AND revision=?`)
-        .run(...fields.map((column) => chore[column]), record.chore_id, record.undo_revision);
+      const result = db.prepare(`UPDATE chores SET ${fields.map((column) => `${column}=?`).join(",")} WHERE id=? AND revision=? AND group_id=?`)
+        .run(...fields.map((column) => chore[column]), record.chore_id, record.undo_revision, groupId);
       if (!result.changes) throw conflict();
     }
-    db.prepare("DELETE FROM completion_history WHERE id=?").run(id);
+    db.prepare("DELETE FROM completion_history WHERE id=? AND group_id=?").run(id, groupId);
     return record.title;
   });
   changed();
-  await notify(userId, "Completion undone", `${userName(userId)} marked ${title} as unfinished.`, `undo:${id}`);
+  await notify(userId, "Completion undone", `${userName(db, userId)} marked ${title} as unfinished.`, `undo:${id}`);
   return noContent(res);
 }
 
@@ -344,14 +382,19 @@ async function removeNativeDevice(req, res, db, session) {
 function nativeNotifications(req, res, db, url) {
   const match = /^Bearer\s+([A-Za-z0-9_-]{20,256})$/i.exec(req.headers.authorization || "");
   if (!match) return json(res, 401, { error: "Native device authentication required" });
-  const device = db.prepare("SELECT token_hash,user_id FROM native_devices WHERE token_hash=?").get(tokenHash(match[1]));
+  const device = db.prepare(`SELECT d.token_hash,d.user_id FROM native_devices d
+    JOIN sessions s ON s.token_hash=d.session_hash JOIN users u ON u.id=d.user_id
+    WHERE d.token_hash=? AND s.expires_at>? AND u.active=1`).get(tokenHash(match[1]), new Date().toISOString());
   if (!device) return json(res, 401, { error: "Native device token expired" });
   const rawAfter = url.searchParams.get("after") || "0";
   if (!/^\d{1,18}$/.test(rawAfter)) throw bad("Invalid notification cursor");
   const after = Number(rawAfter);
   if (!Number.isSafeInteger(after) || after < 0) throw bad("Invalid notification cursor");
-  const events = db.prepare(`SELECT id,title,body,url,tag,created_at AS createdAt
-    FROM native_notification_events WHERE user_id=? AND id>? ORDER BY id LIMIT 100`).all(device.user_id, after);
+  const events = db.prepare(`SELECT e.id,e.title,e.body,e.url,e.tag,e.group_id AS groupId,e.created_at AS createdAt
+    FROM native_notification_events e WHERE e.user_id=? AND e.id>? AND (e.group_id IS NULL OR EXISTS (
+      SELECT 1 FROM group_members m JOIN groups g ON g.id=m.group_id
+      WHERE m.group_id=e.group_id AND m.user_id=e.user_id AND g.archived_at IS NULL
+    )) ORDER BY e.id LIMIT 100`).all(device.user_id, after);
   const cursor = events.length ? Number(events[events.length - 1].id) : after;
   db.prepare("UPDATE native_devices SET updated_at=? WHERE token_hash=?").run(new Date().toISOString(), device.token_hash);
   return json(res, 200, { events, cursor });
@@ -360,8 +403,8 @@ function nativeNotifications(req, res, db, url) {
 function queueNativeNotification(db, userId, title, body, options = {}) {
   if (!db.prepare("SELECT 1 FROM native_devices WHERE user_id=? LIMIT 1").get(userId)) return false;
   const now = new Date().toISOString();
-  db.prepare(`INSERT INTO native_notification_events(user_id,title,body,url,tag,created_at)
-    VALUES (?,?,?,?,?,?)`).run(userId, String(title), String(body), options.url || "/app", options.tag || null, now);
+  db.prepare(`INSERT INTO native_notification_events(user_id,title,body,url,tag,created_at,group_id)
+    VALUES (?,?,?,?,?,?,?)`).run(userId, String(title), String(body), options.url || "/app", options.tag || null, now, options.groupId || null);
   // Native clients use a cursor. A one-week retention bound prevents an abandoned
   // device from growing this table forever while still tolerating long offline gaps.
   const cutoff = new Date(Date.now() - 7 * 86400_000).toISOString();
@@ -392,18 +435,17 @@ async function removeSubscription(req, res, db, userId) {
 }
 
 async function pushTest(res, send, userId) {
-  const sent = await send(userId, "Two of Us", "Push notifications are working on this device.", { url: "/app", tag: "two-of-us-test" });
+  const sent = await send(userId, "Chores", "Push notifications are working on this device.", { url: "/app", tag: "two-of-us-test" });
   if (!sent) throw Object.assign(new Error("Enable push on this device first"), { status: 409 });
   return noContent(res);
 }
 
-async function activityNotification(db, send, actorId, title, body, key) {
-  const userId = actorId === "D" ? "M" : "D";
-  const enabled = db.prepare("SELECT activity_notifications FROM users WHERE id=?").get(userId)?.activity_notifications;
-  // The database change is already committed; notification failure must not report a failed write.
-  if (enabled) {
-    try { await send(userId, title, body, { url: "/app", tag: `activity-${key}`, dedupeKey: `activity:${key}` }); }
-    catch (error) { console.error("activity notification", error); }
+async function activityNotification(db, send, actorId, title, body, key, groupId) {
+  const users = db.prepare(`SELECT u.id FROM users u JOIN group_members m ON m.user_id=u.id
+    WHERE m.group_id=? AND u.id<>? AND u.active=1 AND u.activity_notifications=1`).all(groupId, actorId);
+  for (const user of users) {
+    try { await send(user.id, title, body, { groupId, url: `/app?groupId=${encodeURIComponent(groupId)}`, tag: `activity-${groupId}-${key}` }); }
+    catch (error) { console.error("activity notification failed", error?.name || "Error"); }
   }
 }
 
@@ -414,7 +456,7 @@ function choreChanged(current, chore) {
     || current.reminder_time !== chore.reminderTime;
 }
 
-function userName(userId) { return userId === "D" ? "Dylan" : "Mady"; }
+function userName(db, userId) { return db.prepare("SELECT name FROM users WHERE id=?").get(userId)?.name || "Member"; }
 
 function purgeExpiredSessions(db, now = new Date().toISOString()) {
   db.prepare("DELETE FROM push_subscriptions WHERE session_hash IN (SELECT token_hash FROM sessions WHERE expires_at<=?)").run(now);
@@ -425,7 +467,7 @@ function validatedChore(body) {
   if (!isRecord(body)) throw bad("Chore must be an object");
   const title = typeof body.title === "string" ? body.title.trim() : "";
   if (!title || title.length > 120) throw bad("Title must be 1-120 characters");
-  if (!["D", "M"].includes(body.assigneeId)) throw bad("Choose Dylan or Mady");
+  if (typeof body.assigneeId !== "string" || body.assigneeId.length > 80) throw bad("Choose a group member");
   let schedule;
   try {
     schedule = normalizeSchedule({

@@ -1,6 +1,6 @@
 {
-  "name": "Two of Us Chores",
-  "short_name": "Two of Us",
+  "name": "Chores",
+  "short_name": "Chores",
   "id": "/",
   "description": "A calm shared list for the chores that keep home moving.",
   "start_url": "/login",
@@ -11,7 +11,17 @@
   "orientation": "portrait-primary",
   "prefer_related_applications": false,
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
   ]
 }

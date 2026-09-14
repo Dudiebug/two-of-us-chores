@@ -29,7 +29,7 @@
     attributeFilter: ["data-theme"],
   });
 
-  if ("serviceWorker" in navigator) {
+  if (!window.Capacitor?.isNativePlatform?.() && !/ChoresCapacitor/.test(navigator.userAgent) && "serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   }
 
@@ -57,7 +57,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ userId: document.querySelector("#loginUser").value, password: document.querySelector("#loginPassword").value }),
+        body: JSON.stringify({ username: document.querySelector("#loginUser").value.trim(), password: document.querySelector("#loginPassword").value }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || "Unable to sign in");
