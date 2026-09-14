@@ -48,7 +48,8 @@ jobs:
           if [ -f updates/v12-post.py ]; then python3 updates/v12-post.py; fi
       - name: Build and test
         run: |
-          bash android/build-1.2.sh
+          set -o pipefail
+          bash android/build-1.2.sh 2>&1 | tee v12-build.txt
           node tools/test-native-ui.mjs
       - name: Regenerate web icons and test rendered UI
         run: |
@@ -59,7 +60,7 @@ jobs:
             cairosvg.svg2png(url='public/icon.svg',write_to=f'public/icon-{n}.png',output_width=n,output_height=n)
           PY
           python3 -m playwright install --with-deps chromium
-          python3 tools/browser-smoke.py
+          python3 tools/browser-smoke.py 2>&1 | tee v12-browser.txt
       - name: Enable test emulator acceleration
         run: |
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
@@ -71,7 +72,7 @@ jobs:
           target: google_apis
           disable-animations: true
           working-directory: android/capacitor/android
-          script: ./gradlew --no-daemon connectedDebugAndroidTest
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest
       - name: Commit tested implementation to feature branch
         run: |
           git config user.name 'github-actions[bot]'
@@ -92,6 +93,7 @@ jobs:
         with:
           name: chores-1.2-test-evidence
           path: |
+            v12-*.txt
             v12-*-ui.png
             android/capacitor/android/app/build/reports/androidTests/
             android/capacitor/android/app/build/outputs/androidTest-results/
