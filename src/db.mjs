@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { passwordHash } from "./security.mjs";
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 // The same eligibility rule serves the UI and the transactional undo guard.
 export const CAN_UNDO = `undo_snapshot IS NOT NULL AND (
@@ -58,6 +58,24 @@ function ensureSchema(db, includeChores = true) {
       marker_key TEXT PRIMARY KEY,
       sent_at TEXT NOT NULL
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS native_devices (
+      token_hash TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      session_hash TEXT NOT NULL REFERENCES sessions(token_hash) ON DELETE CASCADE,
+      device_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(user_id,device_id)
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS native_notification_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      url TEXT NOT NULL DEFAULT '/app',
+      tag TEXT,
+      created_at TEXT NOT NULL
+    ) STRICT;
   `);
   ensureColumn(db, "users", "activity_notifications", "INTEGER NOT NULL DEFAULT 1 CHECK(activity_notifications IN (0,1))");
   ensureColumn(db, "push_subscriptions", "session_hash", "TEXT");
@@ -99,6 +117,8 @@ function ensureSchema(db, includeChores = true) {
     CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
     CREATE INDEX IF NOT EXISTS chores_due ON chores(next_due);
     CREATE INDEX IF NOT EXISTS subscriptions_user ON push_subscriptions(user_id);
+    CREATE INDEX IF NOT EXISTS native_devices_user ON native_devices(user_id);
+    CREATE INDEX IF NOT EXISTS native_events_user_id ON native_notification_events(user_id,id);
     PRAGMA user_version=${SCHEMA_VERSION};
   `);
 }

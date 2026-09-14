@@ -15,7 +15,7 @@ const LOGIN_WINDOW_MS = 15 * 60_000;
 const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const staticCache = new Map();
 const PUBLIC_FILES = new Set(["/login.css", "/login.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/sw.js", "/offline.html", "/.well-known/assetlinks.json"]);
-const PRIVATE_FILES = new Set(["/app.js", "/calendar-recurrence.js", "/styles.css"]);
+const PRIVATE_FILES = new Set(["/app.js", "/calendar-recurrence.js", "/styles.css", "/native-app.js"]);
 
 export async function createApp(options = {}) {
   const env = { ...process.env, ...options.env };
@@ -45,7 +45,12 @@ export async function createApp(options = {}) {
     }
   };
   const timeZone = env.HOUSEHOLD_TIMEZONE || "America/Los_Angeles";
-  const send = push.send.bind(push);
+  const sendWebPush = push.send.bind(push);
+  const send = async (userId, title, body, options = {}) => {
+    const queued = queueNativeNotification(db, userId, title, body, options);
+    const delivered = await sendWebPush(userId, title, body, options);
+    return queued || delivered;
+  };
   const notify = (actorId, title, body, key) => activityNotification(db, send, actorId, title, body, key);
   const scheduler = createScheduler({ db, timeZone, send, changed: broadcast, now: clock });
   const cleanupTimer = setInterval(() => purgeExpiredSessions(db), 60_000);
@@ -63,6 +68,7 @@ export async function createApp(options = {}) {
       if (req.method === "GET" && path === "/healthz") return json(res, 200, { ok: true });
       if (req.method !== "GET" && path.startsWith("/api/")) enforceMutation(req, appOrigin, needsJsonBody(req, path));
       if (req.method === "POST" && path === "/api/session") return await login(req, res, db, localInsecure, throttle);
+      if (req.method === "GET" && path === "/api/native-notifications") return nativeNotifications(req, res, db, url);
 
       const session = authenticate(req, db);
       if (req.method === "GET" && path === "/") return redirect(res, session ? "/app" : "/login");
@@ -88,6 +94,8 @@ export async function createApp(options = {}) {
         }));
       }
       if (req.method === "GET" && path === "/api/events") return events(req, res, session, clients);
+      if (req.method === "POST" && path === "/api/native-device") return registerNativeDevice(req, res, db, session);
+      if (req.method === "DELETE" && path === "/api/native-device") return removeNativeDevice(req, res, db, session);
       if (req.method === "GET" && path === "/api/push-key") {
         return json(res, 200, { configured: push.configured, publicKey: push.publicKey });
       }
@@ -304,6 +312,61 @@ async function changePassword(req, res, db, session, clients) {
   });
   closeStreams(clients, (client) => client.userId === session.userId && client.tokenHash !== session.tokenHash);
   return noContent(res);
+}
+
+function validNativeDeviceId(value) {
+  return typeof value === "string" && /^[A-Za-z0-9._:-]{8,128}$/.test(value);
+}
+
+async function registerNativeDevice(req, res, db, session) {
+  const body = await readJson(req);
+  const deviceId = body?.deviceId;
+  if (!validNativeDeviceId(deviceId)) throw bad("Invalid native device ID");
+  const issued = newSession();
+  const now = new Date().toISOString();
+  transaction(db, () => {
+    db.prepare("DELETE FROM native_devices WHERE user_id=? AND device_id=?").run(session.userId, deviceId);
+    db.prepare(`INSERT INTO native_devices(token_hash,user_id,session_hash,device_id,created_at,updated_at)
+      VALUES (?,?,?,?,?,?)`).run(issued.hash, session.userId, session.tokenHash, deviceId, now, now);
+  });
+  const cursor = Number(db.prepare("SELECT COALESCE(MAX(id),0) AS id FROM native_notification_events WHERE user_id=?").get(session.userId).id || 0);
+  return json(res, 200, { token: issued.token, cursor });
+}
+
+async function removeNativeDevice(req, res, db, session) {
+  const body = await readJson(req);
+  if (!validNativeDeviceId(body?.deviceId)) throw bad("Invalid native device ID");
+  db.prepare("DELETE FROM native_devices WHERE user_id=? AND device_id=? AND session_hash=?")
+    .run(session.userId, body.deviceId, session.tokenHash);
+  return noContent(res);
+}
+
+function nativeNotifications(req, res, db, url) {
+  const match = /^Bearer\s+([A-Za-z0-9_-]{20,256})$/i.exec(req.headers.authorization || "");
+  if (!match) return json(res, 401, { error: "Native device authentication required" });
+  const device = db.prepare("SELECT token_hash,user_id FROM native_devices WHERE token_hash=?").get(tokenHash(match[1]));
+  if (!device) return json(res, 401, { error: "Native device token expired" });
+  const rawAfter = url.searchParams.get("after") || "0";
+  if (!/^\d{1,18}$/.test(rawAfter)) throw bad("Invalid notification cursor");
+  const after = Number(rawAfter);
+  if (!Number.isSafeInteger(after) || after < 0) throw bad("Invalid notification cursor");
+  const events = db.prepare(`SELECT id,title,body,url,tag,created_at AS createdAt
+    FROM native_notification_events WHERE user_id=? AND id>? ORDER BY id LIMIT 100`).all(device.user_id, after);
+  const cursor = events.length ? Number(events[events.length - 1].id) : after;
+  db.prepare("UPDATE native_devices SET updated_at=? WHERE token_hash=?").run(new Date().toISOString(), device.token_hash);
+  return json(res, 200, { events, cursor });
+}
+
+function queueNativeNotification(db, userId, title, body, options = {}) {
+  if (!db.prepare("SELECT 1 FROM native_devices WHERE user_id=? LIMIT 1").get(userId)) return false;
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO native_notification_events(user_id,title,body,url,tag,created_at)
+    VALUES (?,?,?,?,?,?)`).run(userId, String(title), String(body), options.url || "/app", options.tag || null, now);
+  // Native clients use a cursor. A one-week retention bound prevents an abandoned
+  // device from growing this table forever while still tolerating long offline gaps.
+  const cutoff = new Date(Date.now() - 7 * 86400_000).toISOString();
+  db.prepare("DELETE FROM native_notification_events WHERE created_at<?").run(cutoff);
+  return true;
 }
 
 async function putSubscription(req, res, db, session) {
