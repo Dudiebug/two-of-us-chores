@@ -1,0 +1,27 @@
+name: Development snapshot
+on:
+  push:
+    branches: [feature/chores-1.2-groups]
+    paths: [.github/workflows/dev-snapshot.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - name: Export source and runtime for offline tests
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/snapshot"
+          git archive HEAD -o "$RUNNER_TEMP/snapshot/source.tar"
+          tar -czf "$RUNNER_TEMP/snapshot/dependencies.tar.gz" node_modules
+          cp "$(command -v node)" "$RUNNER_TEMP/snapshot/node24"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chores-v12-dev-snapshot
+          path: ${{ runner.temp }}/snapshot/
+          retention-days: 1
