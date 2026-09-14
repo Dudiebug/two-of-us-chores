@@ -1,0 +1,33 @@
+name: Export Android APK Signer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - android/export-apksigner.json
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect APK signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          test -x "$BUILD_TOOLS/apksigner"
+          test -s "$BUILD_TOOLS/lib/apksigner.jar"
+          mkdir -p signer/lib
+          cp "$BUILD_TOOLS/apksigner" signer/apksigner
+          cp "$BUILD_TOOLS/lib/apksigner.jar" signer/lib/apksigner.jar
+          printf '%s\n' "$BUILD_TOOLS" > signer/source-build-tools.txt
+      - name: Upload APK signer
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apksigner
+          path: signer
+          if-no-files-found: error
+          retention-days: 1
