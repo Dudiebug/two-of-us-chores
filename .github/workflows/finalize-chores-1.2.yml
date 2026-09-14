@@ -12,8 +12,6 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,8 +23,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Install vector icon renderer
+        run: python3 -m pip install --quiet CairoSVG==2.8.2
       - name: Apply source and reviewed corrections
         run: |
+          git rev-parse HEAD > /tmp/chores-base-source
           python3 - <<'PY'
           import base64,gzip,hashlib,json,subprocess
           from pathlib import Path
@@ -46,13 +47,10 @@ jobs:
           set -o pipefail
           bash android/build-1.2.sh 2>&1 | tee v12-build.txt
           node tools/test-native-ui.mjs
-      - name: Verify rendered application and regenerate icons
+      - name: Verify rendered application
         run: |
-          python3 -m pip install --quiet cairosvg playwright
-          python3 - <<'PY'
-          import cairosvg
-          for n in (192,512): cairosvg.svg2png(url='public/icon.svg',write_to=f'public/icon-{n}.png',output_width=n,output_height=n)
-          PY
+          set -o pipefail
+          python3 -m pip install --quiet playwright
           python3 -m playwright install --with-deps chromium
           python3 tools/browser-smoke.py 2>&1 | tee v12-browser.txt
       - name: Enable emulator acceleration
@@ -74,10 +72,11 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src public deploy android/native android/tests android/build-1.2.sh android/capacitor/package.json android/capacitor/capacitor.config.json tools test docs README.md Dockerfile install.sh .env.example package.json
+          git add src public deploy android/native android/tests android/build-1.2.sh android/capacitor/package.json android/capacitor/package-lock.json android/capacitor/capacitor.config.json tools test docs README.md Dockerfile install.sh .env.example package.json
+          git diff --cached --binary "$(cat /tmp/chores-base-source)" -- src public deploy android/native android/tests android/build-1.2.sh android/capacitor/package.json android/capacitor/package-lock.json android/capacitor/capacitor.config.json tools test docs README.md Dockerfile install.sh .env.example package.json > /tmp/verified-product.patch
           git fetch origin main
-          git diff --binary origin/main -- src public deploy android/native android/tests android/build-1.2.sh android/capacitor/package.json android/capacitor/capacitor.config.json tools test docs README.md Dockerfile install.sh .env.example package.json > /tmp/verified-product.patch
           git checkout -f -B release-main origin/main
+          git apply --check /tmp/verified-product.patch
           git apply --index /tmp/verified-product.patch
           git commit -m 'Release Chores 1.2: configurable users, isolated groups and native notification repair'
           git push origin HEAD:main
@@ -88,9 +87,6 @@ jobs:
           name: chores-1.2-unsigned
           path: /tmp/chores-v12-dist/
           retention-days: 3
-      - name: Publish temporary unsigned build transport
-        run: |
-          gh release create v1.2.0-build --repo "$GITHUB_REPOSITORY" --target "$(git rev-parse HEAD)" --prerelease --title 'Chores 1.2 unsigned build — signing stage only' --notes 'Internal build transport. APK is unsigned and not an installable release. Product tests, browser smoke and Android permission/posting tests passed. Signed installable APK follows separately.' /tmp/chores-v12-dist/chores-1.2.0-unsigned.apk /tmp/chores-v12-dist/build-metadata.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
