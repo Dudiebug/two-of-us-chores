@@ -1,0 +1,26 @@
+{
+  "appId": "net.dudiebug.chores",
+  "appName": "Two of Us Chores",
+  "webDir": "www",
+  "appendUserAgent": " TwoOfUsCapacitor/1.1",
+  "backgroundColor": "#161e20",
+  "server": {
+    "url": "https://chores.dudiebug.net",
+    "cleartext": false
+  },
+  "plugins": {
+    "BackgroundRunner": {
+      "label": "net.dudiebug.chores.notifications",
+      "src": "runners/notifications.js",
+      "event": "nativeNotificationsPoll",
+      "repeat": true,
+      "interval": 15,
+      "autoStart": true
+    },
+    "SystemBars": {
+      "insetsHandling": "css",
+      "style": "DARK",
+      "hidden": false
+    }
+  }
+}
