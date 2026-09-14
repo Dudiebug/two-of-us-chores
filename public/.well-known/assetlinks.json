@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "net.dudiebug.chores",
+        "sha256_cert_fingerprints": ["80:BE:CF:7F:FA:79:09:3F:07:CF:C4:CB:13:AB:42:DA:0B:E0:5E:B7:38:55:E1:06:10:31:50:FB:13:52:0C:C8"]
+      }
+    }]

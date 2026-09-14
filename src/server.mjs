@@ -14,7 +14,7 @@ const SESSION_MS = 30 * 86400_000;
 const LOGIN_WINDOW_MS = 15 * 60_000;
 const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const staticCache = new Map();
-const PUBLIC_FILES = new Set(["/login.css", "/login.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/sw.js", "/offline.html"]);
+const PUBLIC_FILES = new Set(["/login.css", "/login.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/sw.js", "/offline.html", "/.well-known/assetlinks.json"]);
 const PRIVATE_FILES = new Set(["/app.js", "/calendar-recurrence.js", "/styles.css"]);
 
 export async function createApp(options = {}) {
@@ -529,6 +529,7 @@ function mime(file) {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".js": "text/javascript; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
     ".png": "image/png",
     ".svg": "image/svg+xml",
     ".webmanifest": "application/manifest+json; charset=utf-8",
