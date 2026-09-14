@@ -1,0 +1,9 @@
+{
+  "release": "1.1.1",
+  "android": "capacitor",
+  "fixes": [
+    "native BackgroundRunner bridge registration",
+    "Android notification permission prompt",
+    "app label Chores"
+  ]
+}
