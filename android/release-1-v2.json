@@ -1,0 +1,10 @@
+{
+  "title": "Release 1",
+  "tag": "v1.0.0",
+  "version": "1.0.0.0",
+  "versionCode": 1,
+  "packageId": "net.dudiebug.chores",
+  "origin": "https://chores.dudiebug.net",
+  "builder": "PWABuilder Android TWA",
+  "attempt": 2
+}
