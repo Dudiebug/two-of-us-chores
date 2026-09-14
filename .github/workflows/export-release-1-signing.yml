@@ -1,0 +1,34 @@
+name: Export Release 1 Signing Recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - android/export-release-1-signing.json
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download encrypted Release 1 recovery bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p recovery
+          gh release download v1.0.0 \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'release-1-signing-recovery-encrypted.tar.gz' \
+            --dir recovery
+          test -s recovery/release-1-signing-recovery-encrypted.tar.gz
+      - name: Upload encrypted recovery bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-1-signing-recovery-encrypted
+          path: recovery/release-1-signing-recovery-encrypted.tar.gz
+          if-no-files-found: error
+          retention-days: 1
