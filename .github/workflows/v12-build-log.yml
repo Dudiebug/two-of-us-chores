@@ -1,0 +1,21 @@
+name: V12 build diagnostics
+on:
+  push:
+    branches: [feature/chores-1.2-groups]
+    paths: [.github/workflows/v12-build-log.yml]
+permissions:
+  actions: read
+  contents: read
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Export failed build log
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run view 34867641422 --repo "$GITHUB_REPOSITORY" --log > v12-build.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v12-build-log
+          path: v12-build.log
+          retention-days: 1
