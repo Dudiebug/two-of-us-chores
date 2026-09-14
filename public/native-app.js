@@ -4,21 +4,13 @@
   const LABEL = "net.dudiebug.chores.notifications";
   const ENABLED_KEY = "two-of-us-native-notifications";
   const DEVICE_KEY = "two-of-us-native-device-id";
-  const PERMISSION_ASKED_KEY = "chores-native-notification-permission-requested-v1";
-  const isNative = () => window.Capacitor?.getPlatform?.() === "android" || /TwoOfUsCapacitor\/1\.1/.test(navigator.userAgent);
+  const PERMISSION_ASKED_KEY = "chores-native-notification-permission-requested-v2";
+  const isNative = () => window.Capacitor?.getPlatform?.() === "android" || /(?:TwoOfUs|Chores)Capacitor\/1\.1/.test(navigator.userAgent);
   if (!isNative()) return;
 
-  let runnerPlugin = null;
-  function runner() {
-    const capacitor = window.Capacitor;
-    if (!capacitor) return null;
-    if (typeof capacitor.isPluginAvailable === "function" && !capacitor.isPluginAvailable("BackgroundRunner")) return null;
-    if (!runnerPlugin && typeof capacitor.registerPlugin === "function") {
-      runnerPlugin = capacitor.registerPlugin("BackgroundRunner");
-    }
-    return runnerPlugin || capacitor.Plugins?.BackgroundRunner || null;
-  }
-
+  const plugins = () => window.Capacitor?.Plugins || {};
+  const nativePlugin = () => plugins().ChoresNotifications || null;
+  const legacyRunner = () => plugins().BackgroundRunner || null;
   const node = (selector) => document.querySelector(selector);
   const enabled = () => localStorage.getItem(ENABLED_KEY) === "1";
 
@@ -43,14 +35,32 @@
     return body;
   }
 
-  async function dispatch(event, details = {}) {
-    const plugin = runner();
+  async function legacyDispatch(event, details = {}) {
+    const plugin = legacyRunner();
     if (!plugin?.dispatchEvent) throw new Error("Native notification service is unavailable.");
     return plugin.dispatchEvent({ label: LABEL, event, details });
   }
 
+  async function configureService(token, cursor) {
+    const plugin = nativePlugin();
+    if (plugin?.configure) return plugin.configure({ token, cursor });
+    return legacyDispatch("configure", { enabled: true, token, cursor });
+  }
+
+  async function disableService() {
+    const plugin = nativePlugin();
+    if (plugin?.disable) return plugin.disable();
+    return legacyDispatch("configure", { enabled: false });
+  }
+
+  async function pollService() {
+    const plugin = nativePlugin();
+    if (plugin?.pollNow) return plugin.pollNow();
+    return legacyDispatch("poll");
+  }
+
   async function permissionStatus(request = false) {
-    const plugin = runner();
+    const plugin = nativePlugin() || legacyRunner();
     if (!plugin?.checkPermissions) return "unavailable";
     let status = await plugin.checkPermissions();
     if (request && ["prompt", "prompt-with-rationale"].includes(status?.notifications) && plugin.requestPermissions) {
@@ -60,7 +70,7 @@
   }
 
   async function requestInitialPermissionOnce() {
-    const plugin = runner();
+    const plugin = nativePlugin() || legacyRunner();
     if (!plugin) return;
     const current = await permissionStatus(false).catch(() => "unavailable");
     if (!["prompt", "prompt-with-rationale"].includes(current)) return;
@@ -77,9 +87,9 @@
       method: "POST",
       body: JSON.stringify({ deviceId: deviceId() }),
     });
-    await dispatch("configure", { enabled: true, token: data.token, cursor: data.cursor });
+    await configureService(data.token, data.cursor);
     localStorage.setItem(ENABLED_KEY, "1");
-    await dispatch("poll");
+    await pollService();
   }
 
   async function disableNative() {
@@ -90,7 +100,7 @@
       });
     } finally {
       localStorage.removeItem(ENABLED_KEY);
-      await dispatch("configure", { enabled: false }).catch(() => {});
+      await disableService().catch(() => {});
     }
   }
 
@@ -101,8 +111,7 @@
     const hint = node("#iosPushHint");
     if (!status || !button || !test) return;
     if (hint) hint.hidden = true;
-    const plugin = runner();
-    if (!plugin) {
+    if (!nativePlugin() && !legacyRunner()) {
       status.textContent = "Native notification service is unavailable.";
       button.disabled = true;
       test.hidden = true;
@@ -157,7 +166,7 @@
     try {
       if (!enabled()) await enableNative();
       await jsonRequest("/api/push-test", { method: "POST", body: "{}" });
-      await dispatch("poll");
+      await pollService();
       await refreshUi("Test notification sent from Chores.");
     } catch (error) {
       await refreshUi(error.message);
@@ -188,6 +197,6 @@
 
   window.addEventListener("load", async () => {
     await requestInitialPermissionOnce();
-    if (enabled()) await dispatch("poll").catch(() => {});
+    if (enabled()) await pollService().catch(() => {});
   });
 })();
