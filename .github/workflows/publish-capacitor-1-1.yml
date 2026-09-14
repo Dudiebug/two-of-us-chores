@@ -1,0 +1,76 @@
+name: Publish Capacitor Release 1.1
+
+on:
+  push:
+    branches:
+      - release/v1.1.0-staging
+    paths:
+      - 'release-assets/v1.1.0/**'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out staged release
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify signed Android release
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=release-assets/v1.1.0/two-of-us-chores-1.1.0.apk
+          AAB=release-assets/v1.1.0/two-of-us-chores-1.1.0.aab
+          test -s "$APK"
+          test -s "$AAB"
+          sha256sum -c release-assets/v1.1.0/SHA256SUMS.txt
+
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee apk-verify.txt
+          grep -qi 'Verified using v2 scheme.*true' apk-verify.txt
+          grep -qi '80becf7ffa79093f07cfc4cb13ab42da0be05eb73855e106103150fb13520cc8' apk-verify.txt
+          jarsigner -verify "$AAB" >/dev/null
+
+          APKSIGNER_CERT="$($BUILD_TOOLS/apksigner verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p; s/^V3.0 Signer: certificate SHA-256 digest: //p' | head -1)"
+          test "${APKSIGNER_CERT,,}" = '80becf7ffa79093f07cfc4cb13ab42da0be05eb73855e106103150fb13520cc8'
+
+      - name: Publish Release 1.1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main:refs/remotes/origin/main
+          TARGET="$(git rev-parse refs/remotes/origin/main)"
+          if gh release view v1.1.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Release v1.1.0 already exists; refusing to overwrite it.' >&2
+            exit 1
+          fi
+          cat > release-notes.md <<'EOF'
+          # Release 1.1
+
+          **Two of Us Chores 1.1** replaces the Chrome-backed Trusted Web Activity with a real Capacitor Android container.
+
+          - Android package: `net.dudiebug.chores`
+          - Version: `1.1.0` / version code `2`
+          - Signed with the same Android certificate as Release 1, so it can update the existing app in place
+          - Runs the hosted Chores UI in the app's own Android WebView instead of Chrome/TWA
+          - Native Android notifications are posted by **Two of Us Chores**, not grouped under Chrome
+          - Browser users keep the existing Web Push/VAPID notification path
+
+          Native background notification delivery uses Capacitor Background Runner and may be delayed by Android background scheduling/battery optimization. Opening the app and the in-app **Send test** action poll immediately.
+
+          Update the server/LXC to current `main` before enabling native notifications in the app.
+          EOF
+          gh release create v1.1.0 \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET" \
+            --title 'Release 1.1' \
+            --notes-file release-notes.md \
+            release-assets/v1.1.0/two-of-us-chores-1.1.0.apk \
+            release-assets/v1.1.0/two-of-us-chores-1.1.0.aab \
+            release-assets/v1.1.0/SHA256SUMS.txt
