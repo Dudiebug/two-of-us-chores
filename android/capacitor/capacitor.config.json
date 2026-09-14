@@ -9,14 +9,6 @@
     "cleartext": false
   },
   "plugins": {
-    "BackgroundRunner": {
-      "label": "net.dudiebug.chores.notifications",
-      "src": "runners/notifications.js",
-      "event": "nativeNotificationsPoll",
-      "repeat": true,
-      "interval": 15,
-      "autoStart": true
-    },
     "SystemBars": {
       "insetsHandling": "css",
       "style": "DARK",
