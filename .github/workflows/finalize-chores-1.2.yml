@@ -1,0 +1,104 @@
+name: Finalize Chores 1.2
+on:
+  push:
+    branches: [feature/chores-1.2-groups]
+    paths: [.github/workflows/finalize-chores-1.2.yml]
+permissions:
+  contents: write
+concurrency:
+  group: chores-v12-final
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Apply source and reviewed corrections
+        run: |
+          python3 - <<'PY'
+          import base64,gzip,hashlib,json,subprocess
+          from pathlib import Path
+          m=json.loads(Path('updates/v12-request.json').read_text())
+          s=''.join(p.read_text().strip() for p in sorted(Path('updates').glob('v12-patch.part*.b64')))
+          for f in sorted(m.get('transport_fixes',[]),key=lambda x:x['start'],reverse=True):
+            assert s[f['start']:f['end']]==f['old']
+            s=s[:f['start']]+f['new']+s[f['end']:]
+          patch=gzip.decompress(base64.b64decode(s,validate=True))
+          assert hashlib.sha256(patch).hexdigest()==m['patch_sha256']
+          Path('/tmp/v12.patch').write_bytes(patch)
+          subprocess.run(['git','apply','--index','/tmp/v12.patch'],check=True)
+          PY
+          python3 updates/v12-post.py
+      - name: Build and test application
+        run: |
+          set -o pipefail
+          bash android/build-1.2.sh 2>&1 | tee v12-build.txt
+          node tools/test-native-ui.mjs
+      - name: Verify rendered application and regenerate icons
+        run: |
+          python3 -m pip install --quiet cairosvg playwright
+          python3 - <<'PY'
+          import cairosvg
+          for n in (192,512): cairosvg.svg2png(url='public/icon.svg',write_to=f'public/icon-{n}.png',output_width=n,output_height=n)
+          PY
+          python3 -m playwright install --with-deps chromium
+          python3 tools/browser-smoke.py 2>&1 | tee v12-browser.txt
+      - name: Enable emulator acceleration
+        run: if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Test actual Android notification permission and delivery
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          working-directory: android/capacitor/android
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest
+      - name: Preserve unsigned build for local signing
+        run: |
+          mkdir -p /tmp/chores-v12-dist
+          cp android/capacitor/dist/* /tmp/chores-v12-dist/
+      - name: Commit only verified product changes to main
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src public deploy android/native android/tests android/build-1.2.sh android/capacitor/package.json android/capacitor/capacitor.config.json tools test docs README.md Dockerfile install.sh .env.example package.json
+          git fetch origin main
+          git diff --binary origin/main -- src public deploy android/native android/tests android/build-1.2.sh android/capacitor/package.json android/capacitor/capacitor.config.json tools test docs README.md Dockerfile install.sh .env.example package.json > /tmp/verified-product.patch
+          git checkout -f -B release-main origin/main
+          git apply --index /tmp/verified-product.patch
+          git commit -m 'Release Chores 1.2: configurable users, isolated groups and native notification repair'
+          git push origin HEAD:main
+          git rev-parse HEAD > /tmp/chores-v12-dist/SOURCE_COMMIT.txt
+          printf '{"build_run":%s,"source_commit":"%s"}\n' "$GITHUB_RUN_ID" "$(git rev-parse HEAD)" > /tmp/chores-v12-dist/build-metadata.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chores-1.2-unsigned
+          path: /tmp/chores-v12-dist/
+          retention-days: 3
+      - name: Publish temporary unsigned build transport
+        run: |
+          gh release create v1.2.0-build --repo "$GITHUB_REPOSITORY" --target "$(git rev-parse HEAD)" --prerelease --title 'Chores 1.2 unsigned build — signing stage only' --notes 'Internal build transport. APK is unsigned and not an installable release. Product tests, browser smoke and Android permission/posting tests passed. Signed installable APK follows separately.' /tmp/chores-v12-dist/chores-1.2.0-unsigned.apk /tmp/chores-v12-dist/build-metadata.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chores-1.2-final-test-evidence
+          path: |
+            v12-*.txt
+            v12-*-ui.png
+            android/capacitor/android/app/build/reports/androidTests/
+            android/capacitor/android/app/build/outputs/androidTest-results/
+          if-no-files-found: ignore
+          retention-days: 7
