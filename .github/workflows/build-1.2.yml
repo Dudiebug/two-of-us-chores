@@ -1,0 +1,89 @@
+name: Verify Chores 1.2
+on:
+  push:
+    branches: [feature/chores-1.2-groups]
+    paths: [updates/v12-request.json]
+permissions:
+  contents: write
+concurrency:
+  group: chores-v12-verification
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Apply verified source patch
+        run: |
+          python3 - <<'PY'
+          import base64,gzip,hashlib,json,subprocess
+          from pathlib import Path
+          request=json.loads(Path('updates/v12-request.json').read_text())
+          parts=sorted(Path('updates').glob('v12-patch.part*.b64'))
+          data=gzip.decompress(base64.b64decode(''.join(p.read_text().strip() for p in parts), validate=True))
+          assert hashlib.sha256(data).hexdigest()==request['patch_sha256'], 'Source patch digest mismatch'
+          Path('/tmp/chores-v12.patch').write_bytes(data)
+          subprocess.run(['git','apply','--check','/tmp/chores-v12.patch'],check=True)
+          subprocess.run(['git','apply','--index','/tmp/chores-v12.patch'],check=True)
+          PY
+      - name: Build and test
+        run: |
+          bash android/build-1.2.sh
+          node tools/test-native-ui.mjs
+      - name: Regenerate web icons and test rendered UI
+        run: |
+          python3 -m pip install --quiet cairosvg playwright
+          python3 - <<'PY'
+          import cairosvg
+          for n in (192,512):
+            cairosvg.svg2png(url='public/icon.svg',write_to=f'public/icon-{n}.png',output_width=n,output_height=n)
+          PY
+          python3 -m playwright install --with-deps chromium
+          python3 tools/browser-smoke.py
+      - name: Enable test emulator acceleration
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Verify native bridge and actual notification permission dialog
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          working-directory: android/capacitor/android
+          script: ./gradlew --no-daemon connectedDebugAndroidTest
+      - name: Commit tested implementation to feature branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src public deploy android/native android/tests android/build-1.2.sh android/capacitor/package.json android/capacitor/capacitor.config.json tools test docs README.md Dockerfile install.sh .env.example package.json
+          git rm updates/v12-patch.part*.b64 updates/v12-request.json
+          git commit -m 'Implement Chores 1.2 accounts, isolated groups and verified native notifications'
+          git push origin HEAD:feature/chores-1.2-groups
+          git rev-parse HEAD > android/capacitor/dist/SOURCE_COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chores-1.2-unsigned
+          path: android/capacitor/dist/
+          if-no-files-found: error
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chores-1.2-test-evidence
+          path: |
+            v12-*-ui.png
+            android/capacitor/android/app/build/reports/androidTests/
+            android/capacitor/android/app/build/outputs/androidTest-results/
+          if-no-files-found: ignore
+          retention-days: 7
