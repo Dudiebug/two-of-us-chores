@@ -2,6 +2,7 @@
 set -euo pipefail
 
 python3 android/prepare-capacitor-1-1.py
+python3 android/prepare-capacitor-1-1-tests.py
 
 corepack enable
 COREPACK_ENABLE_DOWNLOAD_PROMPT=0 COREPACK_ENABLE_AUTO_PIN=0 corepack pnpm@11.16.0 install --frozen-lockfile
@@ -9,7 +10,7 @@ corepack pnpm@11.16.0 test
 
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-git add src/server.mjs src/db.mjs public/index.html public/native-app.js test/native-notifications.test.mjs docs/ANDROID_CAPACITOR.md
+git add src/server.mjs src/db.mjs public/index.html public/native-app.js test/native-notifications.test.mjs test/undo-persistence.test.mjs docs/ANDROID_CAPACITOR.md
 if ! git diff --cached --quiet; then
   git commit -m "Add Capacitor native notification support"
   git push origin HEAD:main
@@ -49,7 +50,6 @@ manifest = Path("android/app/src/main/AndroidManifest.xml")
 text = manifest.read_text()
 perm = '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />'
 if perm not in text:
-    text = text.replace("<manifest", "<manifest", 1)
     close = text.find(">")
     text = text[:close + 1] + "\n    " + perm + text[close + 1:]
 manifest.write_text(text)
