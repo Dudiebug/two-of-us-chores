@@ -2,10 +2,13 @@ name: Publish Chores 1.2
 on:
   push:
     branches: [main]
-    paths: [releases/publish-1.2.json]
+    paths: [releases/publish-1.2.json, .github/workflows/publish-chores-1.2.yml]
 permissions:
   contents: write
   actions: read
+concurrency:
+  group: chores-v12-publication
+  cancel-in-progress: false
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -45,6 +48,7 @@ jobs:
           Path('release').mkdir()
           Path('release/chores-1.2.0.apk').write_bytes(signed)
           Path('release/SHA256SUMS.txt').write_text(m['signed_sha256']+'  chores-1.2.0.apk\n')
+          Path('release/build-metadata.json').write_text(json.dumps(provenance,indent=2)+'\n')
           PY
       - name: Verify Android signature and application identity
         run: |
@@ -56,11 +60,14 @@ jobs:
           grep -q "versionCode='4'" release/package.txt
           grep -q "versionName='1.2.0'" release/package.txt
           grep -q "application-label:'Chores'" release/package.txt
-      - name: Publish version 1.2.0
+      - name: Publish current main with unchanged tested product source
         run: |
           SOURCE=$(jq -r .source_commit releases/publish-1.2.json)
           [[ "$SOURCE" =~ ^[a-f0-9]{40}$ ]]
           git merge-base --is-ancestor "$SOURCE" HEAD
+          # Release from current default-branch workflows, which Contents:write permits.
+          # All actual product/build files must remain identical to the verified source.
+          git diff --exit-code "$SOURCE" HEAD -- src public deploy android tools test docs README.md Dockerfile install.sh .env.example package.json pnpm-lock.yaml
           if gh release view v1.2.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo 'Refusing to overwrite an existing v1.2.0 release.' >&2
             exit 1
@@ -74,10 +81,10 @@ jobs:
 
           Android loads its bundled bridge through an explicit same-origin script while preserving the site's strict CSP. Notification readiness, permission requests, Android settings and actual notification posting results are handled by Chores, not Chrome.
 
-          Verification: 61 Node 24 tests passed; browser smoke passed; 2 Android API 35 instrumentation tests passed, including the actual notification permission dialog, granting permission and posting a notification from Chores. APK v2/v3 signatures use the original release certificate. These checks do not replace confirmation on your phone or LXC.
+          Verification: 61 Node 24 tests passed; browser smoke passed; 2 Android API 35 instrumentation tests passed, including the actual notification permission dialog, granting permission and posting a notification from Chores. APK v2/v3 signatures use the original release certificate. These checks do not replace confirmation on your phone or LXC. The attached build metadata identifies the tested source; the release tag adds publishing metadata only.
 
           Update the LXC first: `cd /opt/two-of-us-chores && bash install.sh --update`. Then install `chores-1.2.0.apk` over the previous APK. Package ID remains `net.dudiebug.chores`, version code 4. Sign in as `dylan` or `mady` with your existing password. Fresh installations choose their own usernames.
 
           Background native notifications still use WorkManager polling (15-minute minimum; Android can delay them longer), not realtime FCM. Browser Web Push subscriptions remain independent. See `docs/RELEASE_1.2.md` for migration and privacy details.
           EOF
-          gh release create v1.2.0 --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --title 'Chores 1.2' --notes-file release/notes.md release/chores-1.2.0.apk release/SHA256SUMS.txt release/VERIFICATION.txt
+          gh release create v1.2.0 --repo "$GITHUB_REPOSITORY" --target "$(git rev-parse HEAD)" --title 'Chores 1.2' --notes-file release/notes.md release/chores-1.2.0.apk release/SHA256SUMS.txt release/VERIFICATION.txt release/build-metadata.json
