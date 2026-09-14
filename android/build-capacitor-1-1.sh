@@ -50,8 +50,9 @@ manifest = Path("android/app/src/main/AndroidManifest.xml")
 text = manifest.read_text()
 perm = '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />'
 if perm not in text:
-    close = text.find(">")
-    text = text[:close + 1] + "\n    " + perm + text[close + 1:]
+    text, count = re.subn(r'(<manifest\b[^>]*>)', r'\1\n    ' + perm, text, count=1)
+    if count != 1:
+        raise SystemExit("Unable to locate Android manifest root element")
 manifest.write_text(text)
 PY
 
