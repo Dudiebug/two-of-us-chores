@@ -1,0 +1,35 @@
+name: Build Android Release 1 v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - android/release-1-v2.json
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-1-v2
+  cancel-in-progress: false
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+
+      - name: Build and publish Release 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: bash android/build-release-1.sh
