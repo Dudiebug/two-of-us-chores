@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { passwordHash } from "./security.mjs";
 import { migrateGroups, groupsForUser, requireGroup } from "./groups.mjs";
+import { ensureUserColors } from "./user-colors.mjs";
 
 const SCHEMA_VERSION = 6;
 
@@ -25,6 +26,7 @@ export async function openDatabase(path, passwords = {}) {
   await seedUsers(db, passwords);
   ensureSchema(db);
   migrateGroups(db, passwords.HOUSEHOLD_TIMEZONE || "America/Los_Angeles");
+  ensureUserColors(db);
   return db;
 }
 
@@ -227,7 +229,7 @@ export function publicState(db, userId, household = {}, selectedGroup = null) {
   const groups = groupsForUser(db, userId);
   const group = selectedGroup ? requireGroup(db, userId, selectedGroup) : groups[0] || null;
   const groupId = group?.id || null;
-  const user = db.prepare(`SELECT id,username,name,initial,is_admin AS isAdmin,active,digest_time AS digestTime,
+  const user = db.prepare(`SELECT id,username,name,initial,is_admin AS isAdmin,active,color_key AS colorKey,digest_time AS digestTime,
     missed_alert_time AS missedAlertTime,default_reminder_time AS defaultReminderTime,activity_notifications AS activityNotifications
     FROM users WHERE id=?`).get(userId);
   const chores = db.prepare(`SELECT id,group_id AS groupId,title,assignee_id AS assigneeId,schedule_kind AS scheduleKind,
@@ -243,7 +245,7 @@ export function publicState(db, userId, household = {}, selectedGroup = null) {
   return {
     user,
     groups, activeGroup: group,
-    users: group ? db.prepare(`SELECT u.id,u.name,u.initial,u.active FROM users u JOIN group_members m ON m.user_id=u.id WHERE m.group_id=? ORDER BY u.name,u.id`).all(group.id) : [],
+    users: group ? db.prepare(`SELECT u.id,u.name,u.initial,u.active,u.color_key AS colorKey FROM users u JOIN group_members m ON m.user_id=u.id WHERE m.group_id=? ORDER BY u.name,u.id`).all(group.id) : [],
     chores,
     history,
     household,
