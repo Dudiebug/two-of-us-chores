@@ -1,3 +1,5 @@
+@import url("/mobile-dialogs.css?v=1.2.4");
+
 :root {
   --user-teal-bg:#e6f3f1; --user-teal-ink:#155e64; --user-teal-dot:#2a8f8a;
   --user-rose-bg:#f8e9ec; --user-rose-ink:#803b4b; --user-rose-dot:#c7657f;
