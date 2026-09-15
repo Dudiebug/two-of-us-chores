@@ -1,0 +1,43 @@
+/* Mobile-only sizing for the long Settings and Admin bottom sheets.
+   Keep them taller than the chore editor while leaving a comfortable,
+   safe-area-aware gap above the sheet so the close button is reachable. */
+@media (max-width: 767px) {
+  #settingsDialog,
+  #adminDialog {
+    width: 100%;
+    height: min(84dvh, calc(100dvh - max(6rem, calc(env(safe-area-inset-top) + 3rem))));
+    max-height: min(84dvh, calc(100dvh - max(6rem, calc(env(safe-area-inset-top) + 3rem))));
+    margin: auto 0 0;
+    overflow: hidden;
+  }
+
+  #settingsDialog .dialog-card,
+  #adminDialog .dialog-card {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  #settingsDialog .dialog-header,
+  #adminDialog .dialog-header {
+    position: relative;
+    top: auto;
+    flex: 0 0 auto;
+  }
+
+  #settingsDialog .dialog-body,
+  #adminDialog .dialog-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #settingsDialog .dialog-actions,
+  #adminDialog .dialog-actions {
+    flex: 0 0 auto;
+  }
+}
