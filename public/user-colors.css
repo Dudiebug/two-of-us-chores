@@ -1,0 +1,47 @@
+:root {
+  --user-teal-bg:#e6f3f1; --user-teal-ink:#155e64; --user-teal-dot:#2a8f8a;
+  --user-rose-bg:#f8e9ec; --user-rose-ink:#803b4b; --user-rose-dot:#c7657f;
+  --user-blue-bg:#e7effb; --user-blue-ink:#315f8f; --user-blue-dot:#5c8fd1;
+  --user-violet-bg:#f0eaf8; --user-violet-ink:#604b84; --user-violet-dot:#8b6bb1;
+  --user-amber-bg:#fff1d9; --user-amber-ink:#7a531a; --user-amber-dot:#c58a2c;
+  --user-green-bg:#e8f3ea; --user-green-ink:#356c48; --user-green-dot:#5b9b70;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --user-teal-bg:#203738; --user-teal-ink:#a2dfdc; --user-teal-dot:#70d3cd;
+    --user-rose-bg:#3d2a34; --user-rose-ink:#f1b8c7; --user-rose-dot:#e78ca5;
+    --user-blue-bg:#253244; --user-blue-ink:#bad2f2; --user-blue-dot:#7ca9e8;
+    --user-violet-bg:#332b43; --user-violet-ink:#d7c5ef; --user-violet-dot:#ae90d4;
+    --user-amber-bg:#3b3020; --user-amber-ink:#f1cc91; --user-amber-dot:#d7a34a;
+    --user-green-bg:#24382c; --user-green-ink:#b9dfc4; --user-green-dot:#7cba90;
+  }
+}
+:root[data-theme="dark"] {
+  --user-teal-bg:#203738; --user-teal-ink:#a2dfdc; --user-teal-dot:#70d3cd;
+  --user-rose-bg:#3d2a34; --user-rose-ink:#f1b8c7; --user-rose-dot:#e78ca5;
+  --user-blue-bg:#253244; --user-blue-ink:#bad2f2; --user-blue-dot:#7ca9e8;
+  --user-violet-bg:#332b43; --user-violet-ink:#d7c5ef; --user-violet-dot:#ae90d4;
+  --user-amber-bg:#3b3020; --user-amber-ink:#f1cc91; --user-amber-dot:#d7a34a;
+  --user-green-bg:#24382c; --user-green-ink:#b9dfc4; --user-green-dot:#7cba90;
+}
+:root[data-theme="blush"] {
+  --user-teal-bg:#e6f3f1; --user-teal-ink:#155e64; --user-teal-dot:#2a8f8a;
+  --user-rose-bg:#f8e1e9; --user-rose-ink:#803b4b; --user-rose-dot:#c7657f;
+  --user-blue-bg:#e8eef9; --user-blue-ink:#315f8f; --user-blue-dot:#5c8fd1;
+  --user-violet-bg:#efe8f7; --user-violet-ink:#604b84; --user-violet-dot:#8b6bb1;
+  --user-amber-bg:#fff0da; --user-amber-ink:#754f18; --user-amber-dot:#c58a2c;
+  --user-green-bg:#e7f1e8; --user-green-ink:#356c48; --user-green-dot:#5b9b70;
+}
+[data-user-color="teal"] { --user-bg:var(--user-teal-bg); --user-ink:var(--user-teal-ink); --user-dot:var(--user-teal-dot); }
+[data-user-color="rose"] { --user-bg:var(--user-rose-bg); --user-ink:var(--user-rose-ink); --user-dot:var(--user-rose-dot); }
+[data-user-color="blue"] { --user-bg:var(--user-blue-bg); --user-ink:var(--user-blue-ink); --user-dot:var(--user-blue-dot); }
+[data-user-color="violet"] { --user-bg:var(--user-violet-bg); --user-ink:var(--user-violet-ink); --user-dot:var(--user-violet-dot); }
+[data-user-color="amber"] { --user-bg:var(--user-amber-bg); --user-ink:var(--user-amber-ink); --user-dot:var(--user-amber-dot); }
+[data-user-color="green"] { --user-bg:var(--user-green-bg); --user-ink:var(--user-green-ink); --user-dot:var(--user-green-dot); }
+.chore-row[data-user-color], .history-row[data-user-color] { background:var(--user-bg); }
+.chore-row[data-user-color] .assigned, .history-row[data-user-color] .assigned { color:var(--user-ink); }
+.filter-button[data-user-color]:not(.is-active) { background:var(--user-bg); color:var(--user-ink); }
+.day-dots i[data-user-color] { background:var(--user-dot); }
+.user-color-field { display:flex; align-items:center; gap:.55rem; }
+.user-color-field select, .admin-form select { min-height:44px; padding:.6rem .75rem; border:1px solid var(--line); border-radius:10px; color:var(--ink); background:var(--canvas); font:inherit; width:100%; }
+.user-color-swatch { width:22px; height:22px; flex:none; border-radius:50%; background:var(--user-dot); box-shadow:0 0 0 1px var(--line); }
