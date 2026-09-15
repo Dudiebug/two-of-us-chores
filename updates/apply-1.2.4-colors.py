@@ -18,6 +18,16 @@ if '#choreAssignee[data-user-color]' not in s:
     s += '''\n#choreAssignee[data-user-color] {\n  background:var(--user-bg);\n  color:var(--user-ink);\n  border-color:var(--user-dot);\n}\n#choreAssignee option[data-user-color] { color:var(--user-ink); }\n'''
 p.write_text(s)
 
+# The authenticated static-file allowlist must include both new stylesheets.
+p = Path('src/server.mjs')
+s = p.read_text()
+old = 'const PRIVATE_FILES = new Set(["/app.js", "/calendar-recurrence.js", "/styles.css", "/native-app.js", "/admin.js"]);'
+new = 'const PRIVATE_FILES = new Set(["/app.js", "/calendar-recurrence.js", "/styles.css", "/user-colors.css", "/mobile-dialogs.css", "/native-app.js", "/admin.js"]);'
+if new not in s:
+    assert old in s
+    s = s.replace(old, new, 1)
+p.write_text(s)
+
 # Render colors directly from /api/state instead of depending on the admin-side
 # MutationObserver/follow-up fetch to decorate the normal app UI.
 p = Path('public/app.js')
@@ -83,4 +93,4 @@ if new not in s:
     s = s.replace(old, new, 1)
 
 p.write_text(s)
-print('Applied Chores 1.2.4 user-color rendering and stylesheet loading fixes')
+print('Applied Chores 1.2.4 dialog, stylesheet-serving, and user-color rendering fixes')
