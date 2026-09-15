@@ -1,4 +1,4 @@
-# Verification trigger: 1.2.2 user colors
+# Verification trigger: 1.2.2 final CSP-safe user colors
 from pathlib import Path
 
 p = Path("src/db.mjs")
