@@ -36,6 +36,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
   const pendingWrites = new Set();
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const themes = new Set(["system", "light", "dark", "blush"]);
+  const userColors = new Set(["teal", "rose", "blue", "violet", "amber", "green"]);
 
   function applyTheme(value, { save = true } = {}) {
     const theme = themes.has(value) ? value : "system";
@@ -89,6 +90,18 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
 
   function ownerName(id) {
     return state.users.find((user) => user.id === id)?.name || "Former member";
+  }
+
+  function ownerColor(id) {
+    const value = state.users.find((user) => user.id === id)?.colorKey;
+    return userColors.has(value) ? value : "teal";
+  }
+
+  function syncAssigneeColor() {
+    const select = $("#choreAssignee");
+    if (!select) return;
+    if (!select.value) delete select.dataset.userColor;
+    else select.dataset.userColor = ownerColor(select.value);
   }
 
   function scheduleLabel(chore) {
@@ -195,10 +208,11 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     if (state.groupId) groupUrl.searchParams.set("groupId", state.groupId); else groupUrl.searchParams.delete("groupId");
     history.replaceState(null, "", groupUrl);
     state.users = data.users || [];
-    $(".filter-bar").innerHTML = `<button class="filter-button" type="button" data-filter="all">Everyone</button>` + state.users.map((u) => `<button class="filter-button" type="button" data-filter="${escapeHtml(u.id)}">${escapeHtml(u.name)}</button>`).join("");
+    $(".filter-bar").innerHTML = `<button class="filter-button" type="button" data-filter="all">Everyone</button>` + state.users.map((u) => `<button class="filter-button" type="button" data-filter="${escapeHtml(u.id)}" data-user-color="${ownerColor(u.id)}">${escapeHtml(u.name)}</button>`).join("");
     const assignee = $("#choreAssignee"); const selectedAssignee = assignee.value;
-    assignee.innerHTML = state.users.filter((u) => u.active).map((u) => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.name)}</option>`).join("");
+    assignee.innerHTML = state.users.filter((u) => u.active).map((u) => `<option value="${escapeHtml(u.id)}" data-user-color="${ownerColor(u.id)}">${escapeHtml(u.name)}</option>`).join("");
     if (state.users.some((u) => u.active && u.id === selectedAssignee)) assignee.value = selectedAssignee;
+    syncAssigneeColor();
     if (state.filter !== "all" && !state.users.some((u) => u.id === state.filter)) state.filter = "all";
     state.chores = Array.isArray(data.chores) ? data.chores : [];
     state.history = Array.isArray(data?.history) ? data.history : [];
@@ -371,7 +385,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     const group = dueGroup(chore);
     const owner = ownerName(chore.assigneeId);
     const due = group === "missed" ? `Missed · ${dateLabel(chore.nextDue)}` : group === "today" ? "Due today" : `Due ${dateLabel(chore.nextDue)}`;
-    return `<article class="chore-row ${group === "missed" ? "is-missed" : ""}" data-owner="${escapeHtml(chore.assigneeId)}" data-chore-id="${Number(chore.id)}">
+    return `<article class="chore-row ${group === "missed" ? "is-missed" : ""}" data-owner="${escapeHtml(chore.assigneeId)}" data-user-color="${ownerColor(chore.assigneeId)}" data-chore-id="${Number(chore.id)}">
       ${completionCheckbox(chore)}
       <div class="chore-main"><h3>${escapeHtml(chore.title)}</h3><p class="assigned">Assigned to ${escapeHtml(owner)}</p><div class="chore-meta"><span class="due-label ${group === "missed" ? "is-missed" : ""}">${due}</span><span>${escapeHtml(scheduleLabel(chore))}</span></div></div>
       <button class="text-button edit-chevron" type="button" data-action="edit" data-id="${Number(chore.id)}" aria-label="Edit ${escapeHtml(chore.title)}">›</button>
@@ -396,7 +410,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
         ...filteredHistory().filter((record) => record.completedOn === date).map((record) => record.assigneeId),
       ])].sort();
       const label = `${dateLabel(date)}${owners.length ? `; chores for ${owners.map(ownerName).join(" and ")}` : "; no chores"}`;
-      return `<button class="calendar-day-button ${date === selected ? "is-selected" : ""} ${date === todayISO() ? "is-today" : ""}" type="button" data-calendar-date="${date}" aria-label="${escapeHtml(label)}" aria-pressed="${date === selected}"><span class="day-name">${dayNames[index]}</span><span class="day-number">${dateFromISO(date).getUTCDate()}<span class="day-dots" aria-hidden="true">${owners.map((owner) => `<i data-owner="${escapeHtml(owner)}"></i>`).join("")}</span></span></button>`;
+      return `<button class="calendar-day-button ${date === selected ? "is-selected" : ""} ${date === todayISO() ? "is-today" : ""}" type="button" data-calendar-date="${date}" aria-label="${escapeHtml(label)}" aria-pressed="${date === selected}"><span class="day-name">${dayNames[index]}</span><span class="day-number">${dateFromISO(date).getUTCDate()}<span class="day-dots" aria-hidden="true">${owners.map((owner) => `<i data-owner="${escapeHtml(owner)}" data-user-color="${ownerColor(owner)}"></i>`).join("")}</span></span></button>`;
     }).join("");
     const occurrencesByDate = new Map();
     const addOccurrence = (date, occurrence) => {
@@ -446,7 +460,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     const indicator = projected
       ? `<span class="calendar-repeat" role="img" aria-label="Upcoming recurring occurrence for ${title}; not directly completable">↻</span>`
       : completionCheckbox(chore);
-    return `<article class="chore-row agenda-chore ${projected ? "is-projected" : ""}" data-owner="${escapeHtml(chore.assigneeId)}">
+    return `<article class="chore-row agenda-chore ${projected ? "is-projected" : ""}" data-owner="${escapeHtml(chore.assigneeId)}" data-user-color="${ownerColor(chore.assigneeId)}">
       ${indicator}
       <div class="chore-main"><h3>${title}</h3><p class="assigned">Assigned to ${escapeHtml(owner)}</p>${projected ? '<p class="chore-meta">Upcoming recurring occurrence</p>' : ''}</div>
       <button class="text-button edit-chevron" type="button" data-action="edit" data-id="${Number(chore.id)}" aria-label="${escapeHtml(editLabel)}">›</button>
@@ -506,7 +520,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     const owner = escapeHtml(ownerName(record.assigneeId));
     const completedBy = escapeHtml(ownerName(record.completedById));
     const completedAt = record.completedAt || (record.completedOn ? `${record.completedOn}T00:00:00` : "");
-    return `<article class="history-row" data-owner="${escapeHtml(record.assigneeId)}">
+    return `<article class="history-row" data-owner="${escapeHtml(record.assigneeId)}" data-user-color="${ownerColor(record.assigneeId)}">
       <span class="history-check" role="img" aria-label="Completed"><span>✓</span></span>
       <div class="history-main"><h3>${title}</h3><p class="assigned">Assigned to ${owner}</p><div class="history-meta"><span>${escapeHtml(detail)}</span></div><div class="history-completion"><span>Completed by ${completedBy}</span><time datetime="${escapeHtml(completedAt)}">${escapeHtml(completedTimeLabel(record.completedAt))}</time></div></div>
       ${record.canUndo ? `<button class="text-button undo-button" data-action="undo" data-id="${Number(record.id)}" aria-label="Undo completion of ${title}">Undo</button>` : ''}
@@ -549,6 +563,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     $("#deleteChoreButton").hidden = !chore;
     $("#choreTitle").value = chore?.title || "";
     $("#choreAssignee").value = chore?.assigneeId || state.user.id;
+    syncAssigneeColor();
     $("#choreDate").value = chore?.nextDue || todayISO();
     $("#scheduleKind").value = chore?.scheduleKind || "once";
     $("#scheduleInterval").value = chore?.scheduleInterval || 1;
@@ -917,6 +932,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     $("#themeOptions").addEventListener("change", (event) => { if (event.target.name === "theme") applyTheme(event.target.value); });
     $("#scheduleKind").addEventListener("change", updateScheduleFields);
     $("#reminderMode").addEventListener("change", updateReminderFields);
+    $("#choreAssignee").addEventListener("change", syncAssigneeColor);
     $(".filter-bar").addEventListener("click", (event) => { const button = event.target.closest("[data-filter]"); if (button) { state.filter = button.dataset.filter; render(); } });
     $("#groupSelect").addEventListener("change", (event) => {
       stopEvents(); dismissToast(); $$("dialog[open]").forEach((d) => closeDialog(d));

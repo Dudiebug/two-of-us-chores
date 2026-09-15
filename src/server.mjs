@@ -17,7 +17,7 @@ const LOGIN_WINDOW_MS = 15 * 60_000;
 const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const staticCache = new Map();
 const PUBLIC_FILES = new Set(["/native-bridge.js", "/login.css", "/login.js", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/sw.js", "/offline.html", "/.well-known/assetlinks.json"]);
-const PRIVATE_FILES = new Set(["/app.js", "/calendar-recurrence.js", "/styles.css", "/native-app.js", "/admin.js"]);
+const PRIVATE_FILES = new Set(["/app.js", "/calendar-recurrence.js", "/styles.css", "/user-colors.css", "/mobile-dialogs.css", "/native-app.js", "/admin.js"]);
 
 export async function createApp(options = {}) {
   const env = { ...process.env, ...options.env };
