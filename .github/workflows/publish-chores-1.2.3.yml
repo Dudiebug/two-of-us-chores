@@ -1,13 +1,13 @@
-name: Publish Chores 1.2.3
+name: Publish Chores 1.2.4
 on:
   push:
     branches: [main]
-    paths: [releases/publish-1.2.3.json]
+    paths: [releases/publish-1.2.4.json]
 permissions:
   contents: write
   actions: read
 concurrency:
-  group: chores-v123-publication
+  group: chores-v124-publication
   cancel-in-progress: false
 jobs:
   publish:
@@ -19,26 +19,26 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Download verified unsigned 1.2.3 build
+      - name: Download verified unsigned 1.2.4 build
         run: |
-          RUN=$(jq -r .build_run releases/publish-1.2.3.json)
-          SOURCE=$(jq -r .source_commit releases/publish-1.2.3.json)
+          RUN=$(jq -r .build_run releases/publish-1.2.4.json)
+          SOURCE=$(jq -r .source_commit releases/publish-1.2.4.json)
           [[ "$RUN" =~ ^[0-9]+$ ]]
           [[ "$SOURCE" =~ ^[a-f0-9]{40}$ ]]
           test "$(gh run view "$RUN" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = success
-          gh run download "$RUN" --repo "$GITHUB_REPOSITORY" --name chores-1.2.3-unsigned --dir unsigned
+          gh run download "$RUN" --repo "$GITHUB_REPOSITORY" --name chores-1.2.4-final-unsigned --dir unsigned
       - name: Attach public APK signature without private key material
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import gzip,hashlib,json,struct
-          m=json.loads(Path('releases/publish-1.2.3.json').read_text())
-          source=Path('unsigned/chores-1.2.3-unsigned.apk').read_bytes()
+          m=json.loads(Path('releases/publish-1.2.4.json').read_text())
+          source=Path('unsigned/chores-1.2.4-unsigned.apk').read_bytes()
           assert hashlib.sha256(source).hexdigest()==m['unsigned_sha256']
           eocd=source.rfind(b'PK\x05\x06'); assert eocd>0
           cd=struct.unpack_from('<I',source,eocd+16)[0]
           assert source[cd:cd+4]==b'PK\x01\x02'
-          pieces=sorted(Path('releases').glob('signing-block-1.2.3.part*'))
+          pieces=sorted(Path('releases').glob('signing-block-1.2.4.part*'))
           assert len(pieces)==9
           packed=''.join(p.read_text().strip() for p in pieces)
           block=gzip.decompress(bytes.fromhex(packed))
@@ -48,40 +48,27 @@ jobs:
           struct.pack_into('<I',signed,eocd+len(block)+16,cd+len(block))
           assert hashlib.sha256(signed).hexdigest()==m['signed_sha256']
           Path('release').mkdir()
-          Path('release/chores-1.2.3.apk').write_bytes(signed)
-          Path('release/SHA256SUMS.txt').write_text(m['signed_sha256']+'  chores-1.2.3.apk\n')
+          Path('release/chores-1.2.4.apk').write_bytes(signed)
+          Path('release/SHA256SUMS.txt').write_text(m['signed_sha256']+'  chores-1.2.4.apk\n')
           PY
       - name: Verify signature and package identity
         run: |
           BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
-          "$BT/apksigner" verify --verbose --print-certs release/chores-1.2.3.apk > release/VERIFICATION.txt
+          "$BT/apksigner" verify --verbose --print-certs release/chores-1.2.4.apk > release/VERIFICATION.txt
           grep -qi '80becf7ffa79093f07cfc4cb13ab42da0be05eb73855e106103150fb13520cc8' release/VERIFICATION.txt
-          "$BT/aapt" dump badging release/chores-1.2.3.apk > release/package.txt
+          "$BT/aapt" dump badging release/chores-1.2.4.apk > release/package.txt
           grep -q "name='net.dudiebug.chores'" release/package.txt
-          grep -q "versionCode='7'" release/package.txt
-          grep -q "versionName='1.2.3'" release/package.txt
+          grep -q "versionCode='8'" release/package.txt
+          grep -q "versionName='1.2.4'" release/package.txt
           grep -q "application-label:'Chores'" release/package.txt
-      - name: Publish Chores 1.2.3
+      - name: Publish Chores 1.2.4
         run: |
-          SOURCE=$(jq -r .source_commit releases/publish-1.2.3.json)
+          SOURCE=$(jq -r .source_commit releases/publish-1.2.4.json)
           git merge-base --is-ancestor "$SOURCE" HEAD
           git diff --exit-code "$SOURCE" HEAD -- public/app.js android/build-1.2.sh src public deploy android/native android/tests tools test docs README.md Dockerfile install.sh .env.example package.json pnpm-lock.yaml
-          if gh release view v1.2.3 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo 'Refusing to overwrite an existing v1.2.3 release.' >&2
+          if gh release view v1.2.4 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Refusing to overwrite an existing v1.2.4 release.' >&2
             exit 1
           fi
-          cat > release/notes.md <<'EOF'
-          # Chores 1.2.3
-
-          Small UI cleanup for multi-group support.
-
-          - Users who belong to exactly one group no longer see the Group picker/timezone row.
-          - Users with two or more groups still get the picker normally.
-          - Users with no group still retain the existing administrator guidance state.
-          - No authorization or group-isolation behavior changed.
-          - Includes the Chores launcher icon and user-color features from 1.2.2.
-
-          Update the LXC first: `cd /opt/two-of-us-chores && bash install.sh --update`.
-          Then install `chores-1.2.3.apk` over the existing Android app. No uninstall is required.
-          EOF
-          gh release create v1.2.3 --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --title 'Chores 1.2.3' --notes-file release/notes.md release/chores-1.2.3.apk release/SHA256SUMS.txt release/VERIFICATION.txt
+          cp releases/notes-1.2.4.md release/notes.md
+          gh release create v1.2.4 --repo "$GITHUB_REPOSITORY" --target "$SOURCE" --title 'Chores 1.2.4' --notes-file release/notes.md release/chores-1.2.4.apk release/SHA256SUMS.txt release/VERIFICATION.txt
