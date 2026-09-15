@@ -5,6 +5,9 @@ on:
     paths: [.github/workflows/final-verify-1.2.4.yml]
 permissions:
   contents: read
+concurrency:
+  group: chores-v124-release-verification
+  cancel-in-progress: true
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -24,8 +27,10 @@ jobs:
           python3 -m playwright install --with-deps chromium
       - name: Run complete application tests and Android build
         run: bash android/build-1.2.sh
-      - name: Verify rendered UI
-        run: python3 tools/browser-smoke.py
+      - name: Verify rendered desktop and mobile UI
+        run: |
+          python3 tools/browser-smoke.py
+          python3 tools/browser-smoke-1.2.4.py
       - name: Verify final APK identity
         run: |
           APK=android/capacitor/dist/chores-1.2.4-unsigned.apk
