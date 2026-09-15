@@ -9,6 +9,7 @@ import { daysBetween, localDateTime, nextOccurrence, normalizeSchedule, shiftSer
 import { createPush } from "./push.mjs";
 import { createScheduler, rolloverMissed } from "./scheduler.mjs";
 import { newSession, parseCookies, passwordHash, passwordMatches, sessionCookie, SESSION_COOKIE, tokenHash } from "./security.mjs";
+import { validateUserColor } from "./user-colors.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const JSON_LIMIT = 32 * 1024;
@@ -317,18 +318,24 @@ async function updateSettings(req, res, db, userId, changed) {
   const body = await readJson(req);
   if (!isRecord(body)) throw bad("Settings must be an object");
   const keys = ["digestTime", "missedAlertTime", "defaultReminderTime"];
-  if (!keys.some((key) => Object.prototype.hasOwnProperty.call(body, key)) && !Object.prototype.hasOwnProperty.call(body, "activityNotifications")) throw bad("No settings supplied");
-  if (Object.prototype.hasOwnProperty.call(body, "activityNotifications") && typeof body.activityNotifications !== "boolean") throw bad("Activity notification preference must be true or false");
-  const current = db.prepare("SELECT digest_time,missed_alert_time,default_reminder_time,activity_notifications FROM users WHERE id=?").get(userId);
+  const hasActivity = Object.prototype.hasOwnProperty.call(body, "activityNotifications");
+  const hasColor = Object.prototype.hasOwnProperty.call(body, "colorKey");
+  if (!keys.some((key) => Object.prototype.hasOwnProperty.call(body, key)) && !hasActivity && !hasColor) throw bad("No settings supplied");
+  if (hasActivity && typeof body.activityNotifications !== "boolean") throw bad("Activity notification preference must be true or false");
+  const current = db.prepare("SELECT digest_time,missed_alert_time,default_reminder_time,activity_notifications,color_key FROM users WHERE id=?").get(userId);
   const currentValues = [current.digest_time, current.missed_alert_time, current.default_reminder_time];
   const values = keys.map((key, index) => {
     if (!Object.prototype.hasOwnProperty.call(body, key)) return currentValues[index];
     if (body[key] !== null && (typeof body[key] !== "string" || !TIME.test(body[key]))) throw bad("Times must use HH:MM");
     return body[key];
   });
-  db.prepare(`UPDATE users SET digest_time=?,missed_alert_time=?,default_reminder_time=?,activity_notifications=?,updated_at=? WHERE id=?`)
-    .run(...values, Object.prototype.hasOwnProperty.call(body, "activityNotifications") ? Number(body.activityNotifications) : current.activity_notifications, new Date().toISOString(), userId);
-  changed(userId);
+  const colorKey = hasColor ? validateUserColor(body.colorKey) : current.color_key;
+  const colorChanged = colorKey !== current.color_key;
+  db.prepare(`UPDATE users SET digest_time=?,missed_alert_time=?,default_reminder_time=?,activity_notifications=?,color_key=?,updated_at=? WHERE id=?`)
+    .run(...values, hasActivity ? Number(body.activityNotifications) : current.activity_notifications, colorKey, new Date().toISOString(), userId);
+  // Notification times are private to this user. A color is visible to every group
+  // member, so notify all connected clients when it changes.
+  if (colorChanged) changed(); else changed(userId);
   return noContent(res);
 }
 

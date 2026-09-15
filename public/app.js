@@ -740,6 +740,9 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     const settings = state.user || {};
     $("#signedInAs").textContent = `Signed in as ${settings.name || ownerName(settings.id)}`;
     applyTheme(state.theme, { save: false });
+    const colorKey = userColors.has(settings.colorKey) ? settings.colorKey : "teal";
+    const colorInput = $(`#userColorOptions input[value="${colorKey}"]`);
+    if (colorInput) colorInput.checked = true;
     setTimeSetting("digest", settings.digestTime);
     setTimeSetting("missed", settings.missedAlertTime);
     setTimeSetting("defaultReminder", settings.defaultReminderTime);
@@ -756,6 +759,29 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
 
   function bindTimeToggle(id, inputId) {
     $(id).addEventListener("change", (event) => { $(inputId).disabled = !event.target.checked; if (!event.target.checked) $(inputId).value = ""; });
+  }
+
+  async function saveUserColor(event) {
+    event.preventDefault();
+    if (!state.online || !state.user) { showToast("Reconnect before changing your color.", "error"); return; }
+    const errorNode = $("#userColorError");
+    errorNode.hidden = true;
+    const colorKey = $("#userColorOptions input[name=userColor]:checked")?.value;
+    if (!userColors.has(colorKey)) { errorNode.textContent = "Choose one of the available colors."; errorNode.hidden = false; return; }
+    try {
+      await jsonRequest("/api/settings", "PATCH", { colorKey });
+      state.user = { ...state.user, colorKey };
+      state.users = state.users.map((user) => user.id === state.user.id ? { ...user, colorKey } : user);
+      $$('[data-owner], .filter-button[data-filter]').forEach((element) => {
+        const ownerId = element.dataset.owner || element.dataset.filter;
+        if (ownerId === state.user.id) element.dataset.userColor = colorKey;
+      });
+      syncAssigneeColor();
+      render();
+      $("#userColorSuccess").hidden = false;
+      window.setTimeout(() => { $("#userColorSuccess").hidden = true; }, 2400);
+      showToast("Color updated.");
+    } catch (requestError) { errorNode.textContent = requestError.message; errorNode.hidden = false; }
   }
 
   async function saveSettings(event) {
@@ -925,6 +951,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     $("#cancelConfirmButton").addEventListener("click", () => closeDialog($("#confirmDialog")));
     $("#confirmDeleteButton").addEventListener("click", confirmDelete);
     $("#choreForm").addEventListener("submit", saveChore);
+    $("#userColorForm").addEventListener("submit", saveUserColor);
     $("#settingsForm").addEventListener("submit", saveSettings);
     $("#passwordForm").addEventListener("submit", savePassword);
     $("#pushButton").addEventListener("click", togglePush);

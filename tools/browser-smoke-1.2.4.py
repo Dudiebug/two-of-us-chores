@@ -39,6 +39,16 @@ try:
         assert row.get_attribute('data-user-color') == 'rose'
         assert row.evaluate('(el) => getComputedStyle(el).backgroundColor') == mady_bg
 
+        page.locator('#settingsButton').click()
+        page.locator('#settingsDialog').wait_for(state='visible')
+        page.locator('#userColorOptions input[value="green"]').check()
+        page.locator('#userColorForm button[type=submit]').click()
+        page.locator('#userColorSuccess').wait_for(state='visible')
+        assert page.locator('.filter-button[data-filter="D"]').get_attribute('data-user-color') == 'green'
+        assert page.locator('.filter-button[data-filter="D"]').evaluate('(el) => getComputedStyle(el).backgroundColor') != dylan_bg
+        page.locator('#closeSettingsButton').click()
+        page.locator('#settingsDialog').wait_for(state='hidden')
+
         for trigger, dialog, close in [
             ('#settingsButton', '#settingsDialog', '#closeSettingsButton'),
             ('#adminButton', '#adminDialog', '#closeAdmin'),
