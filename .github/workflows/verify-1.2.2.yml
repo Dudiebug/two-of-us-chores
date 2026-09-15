@@ -2,7 +2,12 @@ name: Verify Chores 1.2.2
 on:
   push:
     branches: [feature/chores-1.2.2-user-colors]
-    paths: [updates/apply-user-colors.py]
+    paths:
+      - updates/apply-user-colors.py
+      - src/**
+      - public/**
+      - test/**
+      - android/**
 permissions:
   contents: write
 jobs:
@@ -20,8 +25,14 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Apply public-state color migration
+      - name: Apply public-state color migration if needed
         run: python3 updates/apply-user-colors.py
+      - name: Verify color UI uses an external CSP-safe stylesheet
+        run: |
+          grep -q '/user-colors.css?v=1' public/admin.js
+          test -s public/user-colors.css
+          ! grep -q 'createElement("style")' public/admin.js
+          for color in teal rose blue violet amber green; do grep -q "data-user-color=\"$color\"" public/user-colors.css; done
       - name: Install vector renderer
         run: python3 -m pip install --quiet cairosvg
       - name: Build and run application tests
@@ -49,13 +60,15 @@ jobs:
           disable-animations: true
           working-directory: android/capacitor/android
           script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=net.dudiebug.chores.LauncherIconTest
-      - name: Commit verified database exposure
+      - name: Commit generated database exposure if needed
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add src/db.mjs
-          git commit -m 'Expose predefined user colors in group state'
-          git push origin HEAD:feature/chores-1.2.2-user-colors
+          if ! git diff --cached --quiet; then
+            git commit -m 'Expose predefined user colors in group state'
+            git push origin HEAD:feature/chores-1.2.2-user-colors
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: chores-1.2.2-unsigned
