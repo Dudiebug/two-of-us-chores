@@ -30,21 +30,23 @@ jobs:
       - name: Reconstruct the locally signed APK from public binary delta
         run: |
           set -euo pipefail
-          mkdir -p work release
-          cp unsigned/chores-1.2.4-unsigned.apk work/chores-1.2.4-unsigned.apk
+          SIGNWORK=/tmp/chores-v124-signwork
+          rm -rf "$SIGNWORK"
+          mkdir -p "$SIGNWORK" release
+          cp unsigned/chores-1.2.4-unsigned.apk "$SIGNWORK/chores-1.2.4-unsigned.apk"
           cat releases/signed-apk-1.2.4.patch.part* > /tmp/chores-1.2.4-signed.patch
-          echo "Unsigned APK SHA256: $(sha256sum work/chores-1.2.4-unsigned.apk | awk '{print $1}')"
+          echo "Unsigned APK SHA256: $(sha256sum "$SIGNWORK/chores-1.2.4-unsigned.apk" | awk '{print $1}')"
           echo "Signed delta bytes: $(wc -c < /tmp/chores-1.2.4-signed.patch)"
           echo "Signed delta SHA256: $(sha256sum /tmp/chores-1.2.4-signed.patch | awk '{print $1}')"
           (
-            cd work
+            cd "$SIGNWORK"
             git apply --binary /tmp/chores-1.2.4-signed.patch
           )
-          test -f work/chores-1.2.4-v2v3.apk
-          ACTUAL_SIGNED=$(sha256sum work/chores-1.2.4-v2v3.apk | awk '{print $1}')
+          test -f "$SIGNWORK/chores-1.2.4-v2v3.apk"
+          ACTUAL_SIGNED=$(sha256sum "$SIGNWORK/chores-1.2.4-v2v3.apk" | awk '{print $1}')
           echo "Reconstructed signed SHA256: $ACTUAL_SIGNED"
           test "$ACTUAL_SIGNED" = "$(jq -r .signed_sha256 releases/publish-1.2.4.json)"
-          cp work/chores-1.2.4-v2v3.apk release/chores-1.2.4.apk
+          cp "$SIGNWORK/chores-1.2.4-v2v3.apk" release/chores-1.2.4.apk
           printf '%s  chores-1.2.4.apk\n' "$ACTUAL_SIGNED" > release/SHA256SUMS.txt
       - name: Verify signature and package identity
         run: |
