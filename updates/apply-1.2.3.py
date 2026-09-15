@@ -1,3 +1,4 @@
+# Verification trigger: Chores 1.2.3
 from pathlib import Path
 
 p = Path('public/app.js')
