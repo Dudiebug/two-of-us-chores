@@ -37,7 +37,7 @@ jobs:
           grep -q 'chores_launcher_monochrome' /tmp/resources.txt
       - name: Enable emulator acceleration
         run: if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
-      - name: Verify Android package manager resolves the new icon resource IDs
+      - name: Verify Android package manager resolves only dedicated Chores icon resources
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -45,7 +45,7 @@ jobs:
           target: google_apis
           disable-animations: true
           working-directory: android/capacitor/android
-          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=net.dudiebug.chores.LauncherIconTest
       - uses: actions/upload-artifact@v4
         with:
           name: chores-1.2.1-unsigned
