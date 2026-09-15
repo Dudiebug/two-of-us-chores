@@ -8,9 +8,14 @@ old = '''      state.user = { ...state.user, colorKey };
 '''
 new = '''      state.user = { ...state.user, colorKey };
       state.users = state.users.map((user) => user.id === state.user.id ? { ...user, colorKey } : user);
-      await loadState({ silent: true });
+      $$('[data-owner], .filter-button[data-filter]').forEach((element) => {
+        const ownerId = element.dataset.owner || element.dataset.filter;
+        if (ownerId === state.user.id) element.dataset.userColor = colorKey;
+      });
+      syncAssigneeColor();
+      render();
       $("#userColorSuccess").hidden = false;
 '''
 assert old in s
 p.write_text(s.replace(old, new, 1))
-print('Refreshes visible ownership colors immediately after self-service color changes')
+print('Updates visible ownership colors immediately after self-service color changes')
