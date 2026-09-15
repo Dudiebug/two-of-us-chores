@@ -7,11 +7,14 @@ const index = await readFile(new URL('public/index.html', root), 'utf8');
 const app = await readFile(new URL('public/app.js', root), 'utf8');
 const colors = await readFile(new URL('public/user-colors.css', root), 'utf8');
 const dialogs = await readFile(new URL('public/mobile-dialogs.css', root), 'utf8');
+const server = await readFile(new URL('src/server.mjs', root), 'utf8');
 
-test('1.2.4 loads palette and mobile dialog styles', () => {
+test('1.2.4 loads and serves palette/mobile dialog styles', () => {
   assert.match(index, /user-colors\.css\?v=1\.2\.4/);
   assert.match(index, /mobile-dialogs\.css\?v=1\.2\.4/);
   assert.match(colors, /#choreAssignee\[data-user-color\]/);
+  assert.match(server, /PRIVATE_FILES[\s\S]*user-colors\.css/);
+  assert.match(server, /PRIVATE_FILES[\s\S]*mobile-dialogs\.css/);
 });
 
 test('normal app UI renders configured user colors directly', () => {
