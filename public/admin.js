@@ -11,6 +11,16 @@
   let colorMap = new Map();
   let colorRefreshTimer = 0;
 
+  // Use an external same-origin stylesheet so this remains compatible with the
+  // app's strict CSP instead of injecting an inline <style> block.
+  if (!document.querySelector('link[data-user-colors]')) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "/user-colors.css?v=1";
+    link.dataset.userColors = "";
+    document.head.append(link);
+  }
+
   function colorOptions(selected = "teal") {
     return palette.map(([key, label]) => `<option value="${key}" ${key === selected ? "selected" : ""}>${label}</option>`).join("");
   }
