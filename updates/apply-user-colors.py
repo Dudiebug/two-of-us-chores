@@ -1,3 +1,4 @@
+# Verification trigger: 1.2.2 user colors
 from pathlib import Path
 
 p = Path("src/db.mjs")
