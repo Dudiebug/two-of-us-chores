@@ -1,0 +1,64 @@
+name: Verify Chores 1.2.2
+on:
+  push:
+    branches: [feature/chores-1.2.2-user-colors]
+    paths: [updates/apply-user-colors.py]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Apply public-state color migration
+        run: python3 updates/apply-user-colors.py
+      - name: Install vector renderer
+        run: python3 -m pip install --quiet cairosvg
+      - name: Build and run application tests
+        run: bash android/build-1.2.sh
+      - name: Verify APK identity and icon resources
+        run: |
+          APK=android/capacitor/dist/chores-1.2.2-unsigned.apk
+          BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BT/aapt" dump badging "$APK" | tee /tmp/badging.txt
+          grep -q "name='net.dudiebug.chores'" /tmp/badging.txt
+          grep -q "versionCode='6'" /tmp/badging.txt
+          grep -q "versionName='1.2.2'" /tmp/badging.txt
+          grep -q "application-label:'Chores'" /tmp/badging.txt
+          "$BT/aapt" dump resources "$APK" > /tmp/resources.txt
+          grep -q 'chores_launcher' /tmp/resources.txt
+          grep -q 'chores_launcher_monochrome' /tmp/resources.txt
+      - name: Enable emulator acceleration
+        run: if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Verify PackageManager resolves dedicated Chores icon
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          working-directory: android/capacitor/android
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=net.dudiebug.chores.LauncherIconTest
+      - name: Commit verified database exposure
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/db.mjs
+          git commit -m 'Expose predefined user colors in group state'
+          git push origin HEAD:feature/chores-1.2.2-user-colors
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chores-1.2.2-unsigned
+          path: android/capacitor/dist/
+          if-no-files-found: error
+          retention-days: 3
