@@ -19,8 +19,8 @@ import xml.etree.ElementTree as ET
 for sample in Path('android/app/src/androidTest').rglob('ExampleInstrumentedTest.java'):
     sample.write_text(sample.read_text().replace('com.getcapacitor.app','net.dudiebug.chores'))
 p=Path('android/app/build.gradle');s=p.read_text()
-s=re.sub(r'versionCode\s+\d+', 'versionCode 6',s,count=1)
-s=re.sub(r'versionName\s+"[^"]+"', 'versionName "1.2.2"',s,count=1)
+s=re.sub(r'versionCode\s+\d+', 'versionCode 7',s,count=1)
+s=re.sub(r'versionName\s+"[^"]+"', 'versionName "1.2.3"',s,count=1)
 s=s.replace('dependencies {','''dependencies {
     implementation "androidx.work:work-runtime:2.11.2"
     androidTestImplementation "androidx.test.ext:junit:1.2.1"
@@ -48,7 +48,7 @@ chmod +x gradlew
 ./gradlew --no-daemon :app:assembleRelease :app:bundleRelease :app:assembleDebug :app:assembleDebugAndroidTest
 cd ..
 mkdir -p dist
-cp android/app/build/outputs/apk/release/app-release-unsigned.apk dist/chores-1.2.2-unsigned.apk
-cp android/app/build/outputs/bundle/release/app-release.aab dist/chores-1.2.2-unsigned.aab
+cp android/app/build/outputs/apk/release/app-release-unsigned.apk dist/chores-1.2.3-unsigned.apk
+cp android/app/build/outputs/bundle/release/app-release.aab dist/chores-1.2.3-unsigned.aab
 cp package-lock.json dist/android-package-lock.json
 (cd dist && sha256sum * > SHA256SUMS.txt)
