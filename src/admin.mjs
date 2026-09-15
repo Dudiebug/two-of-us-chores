@@ -1,18 +1,23 @@
 import { passwordHash } from "./security.mjs";
 import { audit, fail, makeGroup, makeUser, requireAdmin, validateName, validateUsername, validateZone } from "./groups.mjs";
 import { transaction } from "./db.mjs";
+import { ensureUserColors, validateUserColor } from "./user-colors.mjs";
 
 // This module is called only after the session + same-origin mutation gates.
 export async function adminRequest(db, actorId, method, path, body, changed) {
   requireAdmin(db, actorId);
+  ensureUserColors(db);
   if (method === "GET" && path === "/api/admin/state") {
-    return { users: db.prepare("SELECT id,username,name,initial,is_admin AS isAdmin,active FROM users ORDER BY username").all(),
+    return { users: db.prepare("SELECT id,username,name,initial,is_admin AS isAdmin,active,color_key AS colorKey FROM users ORDER BY username").all(),
       groups: db.prepare("SELECT id,name,time_zone AS timeZone,archived_at AS archivedAt FROM groups ORDER BY name").all(),
       memberships: db.prepare("SELECT group_id AS groupId,user_id AS userId FROM group_members").all() };
   }
   if (!body || typeof body !== "object" || Array.isArray(body)) throw fail(400, "JSON object required");
   if (method === "POST" && path === "/api/admin/users") {
-    const id = await makeUser(db, body, actorId); changed(); return { id };
+    const colorKey = validateUserColor(body.colorKey || "teal");
+    const id = await makeUser(db, body, actorId);
+    db.prepare("UPDATE users SET color_key=? WHERE id=?").run(colorKey, id);
+    changed(); return { id };
   }
   if (method === "POST" && path === "/api/admin/groups") {
     const id = makeGroup(db, body, actorId); changed(); return { id };
@@ -24,6 +29,7 @@ export async function adminRequest(db, actorId, method, path, body, changed) {
     if (!previous) throw fail(404, "User not found");
     const name = body.name === undefined ? previous.name : validateName(body.name);
     const username = body.username === undefined ? previous.username : validateUsername(body.username);
+    const colorKey = body.colorKey === undefined ? previous.color_key : validateUserColor(body.colorKey);
     for (const key of ["active", "isAdmin"]) if (body[key] !== undefined && typeof body[key] !== "boolean") throw fail(400, `Invalid ${key}`);
     const active = body.active === undefined ? previous.active : Number(body.active);
     const isAdmin = body.isAdmin === undefined ? previous.is_admin : Number(body.isAdmin);
@@ -36,8 +42,8 @@ export async function adminRequest(db, actorId, method, path, body, changed) {
       requireAdmin(db, actorId); // Recheck after async password hashing.
       if ((!active || !isAdmin) && !db.prepare("SELECT 1 FROM users WHERE active=1 AND is_admin=1 AND id<>?").get(id)) throw fail(409, "Keep at least one active administrator");
       if (db.prepare("SELECT 1 FROM users WHERE username=? COLLATE NOCASE AND id<>?").get(username, id)) throw fail(409, "Username is already in use");
-      db.prepare("UPDATE users SET username=?,name=?,initial=?,active=?,is_admin=?,updated_at=? WHERE id=?")
-        .run(username, name, [...name][0].toUpperCase(), active, isAdmin, new Date().toISOString(), id);
+      db.prepare("UPDATE users SET username=?,name=?,initial=?,active=?,is_admin=?,color_key=?,updated_at=? WHERE id=?")
+        .run(username, name, [...name][0].toUpperCase(), active, isAdmin, colorKey, new Date().toISOString(), id);
       if (hash) db.prepare("UPDATE users SET password_salt=?,password_hash=? WHERE id=?").run(hash.salt, hash.hash, id);
       // Disabled accounts, password resets and authority changes revoke every session/device.
       if (!active || hash || isAdmin !== previous.is_admin) {
