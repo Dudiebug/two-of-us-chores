@@ -31,14 +31,14 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import base64,gzip,hashlib,json,struct
+          import gzip,hashlib,json,struct
           m=json.loads(Path('releases/publish-1.2.3.json').read_text())
           source=Path('unsigned/chores-1.2.3-unsigned.apk').read_bytes()
           assert hashlib.sha256(source).hexdigest()==m['unsigned_sha256']
           eocd=source.rfind(b'PK\x05\x06'); assert eocd>0
           cd=struct.unpack_from('<I',source,eocd+16)[0]
           assert source[cd:cd+4]==b'PK\x01\x02'
-          block=gzip.decompress(base64.b64decode(m['signing_block_gzip_base64'],validate=True))
+          block=gzip.decompress(bytes.fromhex(m['signing_block_gzip_hex']))
           assert len(block)==m['signing_block_bytes']
           assert block[-16:]==b'APK Sig Block 42'
           signed=bytearray(source[:cd]+block+source[cd:])
