@@ -38,7 +38,10 @@ jobs:
           eocd=source.rfind(b'PK\x05\x06'); assert eocd>0
           cd=struct.unpack_from('<I',source,eocd+16)[0]
           assert source[cd:cd+4]==b'PK\x01\x02'
-          block=gzip.decompress(bytes.fromhex(m['signing_block_gzip_hex']))
+          pieces=sorted(Path('releases').glob('signing-block-1.2.3.part*'))
+          assert len(pieces)==9
+          packed=''.join(p.read_text().strip() for p in pieces)
+          block=gzip.decompress(bytes.fromhex(packed))
           assert len(block)==m['signing_block_bytes']
           assert block[-16:]==b'APK Sig Block 42'
           signed=bytearray(source[:cd]+block+source[cd:])
