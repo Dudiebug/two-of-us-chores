@@ -1,0 +1,54 @@
+name: Verify Chores 1.2.1
+on:
+  push:
+    branches: [hotfix/chores-1.2.1-icon]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install vector renderer
+        run: python3 -m pip install --quiet cairosvg
+      - name: Build hotfix and run application tests
+        run: bash android/build-1.2.sh
+      - name: Verify APK version and dedicated launcher resources
+        run: |
+          APK=android/capacitor/dist/chores-1.2.1-unsigned.apk
+          BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BT/aapt" dump badging "$APK" | tee /tmp/badging.txt
+          grep -q "name='net.dudiebug.chores'" /tmp/badging.txt
+          grep -q "versionCode='5'" /tmp/badging.txt
+          grep -q "versionName='1.2.1'" /tmp/badging.txt
+          grep -q "application-label:'Chores'" /tmp/badging.txt
+          "$BT/aapt" dump resources "$APK" > /tmp/resources.txt
+          grep -q 'chores_launcher' /tmp/resources.txt
+          grep -q 'chores_launcher_round' /tmp/resources.txt
+          grep -q 'chores_launcher_foreground' /tmp/resources.txt
+          grep -q 'chores_launcher_monochrome' /tmp/resources.txt
+      - name: Enable emulator acceleration
+        run: if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Verify Android package manager resolves the new icon resource IDs
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          working-directory: android/capacitor/android
+          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chores-1.2.1-unsigned
+          path: android/capacitor/dist/
+          if-no-files-found: error
+          retention-days: 3
