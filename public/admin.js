@@ -8,8 +8,6 @@
   ];
   const paletteKeys = new Set(palette.map(([key]) => key));
   let state;
-  let colorMap = new Map();
-  let colorRefreshTimer = 0;
 
   // Use an external same-origin stylesheet so this remains compatible with the
   // app's strict CSP instead of injecting an inline <style> block.
@@ -35,52 +33,13 @@
     form.insertBefore(label, adminLabel || form.querySelector("button"));
   }
 
-  function applyUserColors() {
-    let missing = false;
-    document.querySelectorAll("[data-owner]").forEach((element) => {
-      const color = colorMap.get(element.dataset.owner);
-      if (color) element.dataset.userColor = color;
-      else if (element.dataset.owner) missing = true;
-    });
-    document.querySelectorAll('.filter-button[data-filter]:not([data-filter="all"])').forEach((element) => {
-      const color = colorMap.get(element.dataset.filter);
-      if (color) element.dataset.userColor = color;
-      else if (element.dataset.filter) missing = true;
-    });
-    if (missing) scheduleColorRefresh();
-  }
-
-  function scheduleColorRefresh() {
-    window.clearTimeout(colorRefreshTimer);
-    colorRefreshTimer = window.setTimeout(refreshColors, 60);
-  }
-
-  async function refreshColors() {
-    try {
-      const groupId = $("#groupSelect")?.value || new URL(location.href).searchParams.get("groupId");
-      if (!groupId) return;
-      const url = new URL("/api/state", location.origin);
-      url.searchParams.set("groupId", groupId);
-      const res = await fetch(url, { credentials: "same-origin" });
-      if (!res.ok) return;
-      const data = await res.json();
-      colorMap = new Map((data.users || []).map((user) => [user.id, normalizeColor(user.colorKey)]));
-      applyUserColors();
-    } catch { /* Color decoration is non-critical. */ }
-  }
-
-  new MutationObserver(applyUserColors).observe(document.body, { childList: true, subtree: true });
   document.addEventListener("change", (event) => {
-    if (event.target.matches("#groupSelect")) scheduleColorRefresh();
     if (event.target.matches('#adminDialog select[name="colorKey"]')) {
       const swatch = event.target.closest("label")?.querySelector(".user-color-swatch");
       if (swatch) swatch.dataset.userColor = normalizeColor(event.target.value);
     }
   });
-  window.addEventListener("chores-admin-changed", scheduleColorRefresh);
-  window.addEventListener("popstate", scheduleColorRefresh);
   installCreateUserColorField();
-  scheduleColorRefresh();
 
   async function api(path, method = "GET", body) {
     const res = await fetch(path, { method, credentials: "same-origin", headers: body === undefined ? {} : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });

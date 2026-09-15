@@ -10,7 +10,7 @@
     <link rel="mask-icon" href="/icon.svg" color="#b95263">
     <link rel="icon" href="/icon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/styles.css?v=13">
-    <link rel="stylesheet" href="/user-colors.css?v=1.2.4">
+    <link rel="stylesheet" href="/user-colors.css?v=1.2.4" data-user-colors>
     <link rel="stylesheet" href="/mobile-dialogs.css?v=1.2.4">
     <title>Chores</title>
   </head>
@@ -218,6 +218,19 @@
               <label><input type="radio" name="theme" value="blush"><span class="theme-choice" data-theme-preview="blush"><i aria-hidden="true"></i><strong>Pink</strong></span></label>
             </div>
           </section>
+          <form id="userColorForm" class="settings-section" novalidate>
+            <div><h3 id="userColorTitle">Your color</h3><p class="field-hint">Used for your name, assigned chores, calendar dots, and history. This preference follows your account on every device.</p></div>
+            <div class="self-color-options" id="userColorOptions" role="radiogroup" aria-labelledby="userColorTitle">
+              <label><input type="radio" name="userColor" value="teal"><span class="self-color-choice" data-user-color="teal"><i aria-hidden="true"></i><strong>Teal</strong></span></label>
+              <label><input type="radio" name="userColor" value="rose"><span class="self-color-choice" data-user-color="rose"><i aria-hidden="true"></i><strong>Rose</strong></span></label>
+              <label><input type="radio" name="userColor" value="blue"><span class="self-color-choice" data-user-color="blue"><i aria-hidden="true"></i><strong>Blue</strong></span></label>
+              <label><input type="radio" name="userColor" value="violet"><span class="self-color-choice" data-user-color="violet"><i aria-hidden="true"></i><strong>Violet</strong></span></label>
+              <label><input type="radio" name="userColor" value="amber"><span class="self-color-choice" data-user-color="amber"><i aria-hidden="true"></i><strong>Amber</strong></span></label>
+              <label><input type="radio" name="userColor" value="green"><span class="self-color-choice" data-user-color="green"><i aria-hidden="true"></i><strong>Green</strong></span></label>
+            </div>
+            <p class="form-message" id="userColorError" role="alert" hidden></p>
+            <div class="inline-actions"><button class="button button-secondary" type="submit">Save color</button><span class="success-text" id="userColorSuccess" hidden>Saved.</span></div>
+          </form>
           <section class="settings-section" aria-labelledby="pushTitle">
             <div class="settings-heading">
               <div><h3 id="pushTitle">Push reminders</h3><p id="pushStatus">Checking availability…</p></div>

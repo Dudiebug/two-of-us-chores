@@ -52,3 +52,12 @@
   border-color:var(--user-dot);
 }
 #choreAssignee option[data-user-color] { color:var(--user-ink); }
+
+.self-color-options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.6rem; }
+.self-color-options label { position:relative; min-width:0; }
+.self-color-options input { position:absolute; opacity:0; width:1px; height:1px; }
+.self-color-choice { min-height:46px; display:flex; align-items:center; justify-content:center; gap:.45rem; padding:.55rem .65rem; border:1px solid var(--line); border-radius:12px; background:var(--user-bg); color:var(--user-ink); cursor:pointer; }
+.self-color-choice i { width:14px; height:14px; border-radius:50%; background:var(--user-dot); flex:none; }
+.self-color-options input:checked + .self-color-choice { border-color:var(--user-dot); box-shadow:0 0 0 2px var(--user-dot); }
+.self-color-options input:focus-visible + .self-color-choice { outline:2px solid var(--focus); outline-offset:2px; }
+@media (max-width:480px) { .self-color-options { grid-template-columns:repeat(2,minmax(0,1fr)); } }
