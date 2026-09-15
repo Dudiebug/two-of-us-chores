@@ -23,6 +23,7 @@ jobs:
         run: |
           python3 updates/apply-1.2.4-self-color.py
           python3 updates/fix-1.2.4-self-color-refresh.py
+          python3 updates/remove-legacy-color-decorator.py
       - name: Run application tests
         run: |
           corepack enable
@@ -38,7 +39,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/server.mjs public/index.html public/app.js public/user-colors.css tools/browser-smoke-1.2.4.py test/self-color-settings.test.mjs
+          git add src/server.mjs public/index.html public/app.js public/user-colors.css public/admin.js tools/browser-smoke-1.2.4.py test/self-color-settings.test.mjs
           git diff --cached --check
           if ! git diff --cached --quiet; then
             git commit -m 'Let users choose their own color in Settings'
