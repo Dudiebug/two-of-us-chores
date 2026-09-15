@@ -39,16 +39,6 @@ try:
         assert row.get_attribute('data-user-color') == 'rose'
         assert row.evaluate('(el) => getComputedStyle(el).backgroundColor') == mady_bg
 
-        page.locator('#settingsButton').click()
-        page.locator('#settingsDialog').wait_for(state='visible')
-        page.locator('#userColorOptions input[value="green"]').check()
-        page.locator('#userColorForm button[type=submit]').click()
-        page.locator('#userColorSuccess').wait_for(state='visible')
-        assert page.locator('.filter-button[data-filter="D"]').get_attribute('data-user-color') == 'green'
-        assert page.locator('.filter-button[data-filter="D"]').evaluate('(el) => getComputedStyle(el).backgroundColor') != dylan_bg
-        page.locator('#closeSettingsButton').click()
-        page.locator('#settingsDialog').wait_for(state='hidden')
-
         for trigger, dialog, close in [
             ('#settingsButton', '#settingsDialog', '#closeSettingsButton'),
             ('#adminButton', '#adminDialog', '#closeAdmin'),
@@ -62,6 +52,44 @@ try:
             assert close_box and close_box['y'] >= box['y'] and close_box['y'] + close_box['height'] <= 915, close_box
             page.locator(close).click()
             page.locator(dialog).wait_for(state='hidden')
+
+        normal_user = browser.new_page(viewport={'width': 412, 'height': 915}, device_scale_factor=1)
+        normal_user.on('pageerror', lambda error: errors.append(str(error)))
+        normal_user.goto('http://localhost:3099/login')
+        normal_user.locator('#loginUser').fill('mady')
+        normal_user.locator('#loginPassword').fill('mady-test-password')
+        normal_user.locator('#loginForm button[type=submit]').click()
+        normal_user.wait_for_url('**/app**')
+        mady = normal_user.locator('.filter-button[data-filter="M"]')
+        mady.wait_for(state='visible')
+        assert normal_user.locator('#adminButton').is_hidden()
+        assert mady.get_attribute('data-user-color') == 'rose'
+        mady_bg = mady.evaluate('(el) => getComputedStyle(el).backgroundColor')
+
+        normal_user.locator('#settingsButton').click()
+        normal_user.locator('#settingsDialog').wait_for(state='visible')
+        normal_user.locator('#userColorOptions input[value="green"]').check()
+        with normal_user.expect_response(lambda response: response.url.endswith('/api/settings') and response.request.method == 'PATCH') as response_info:
+            normal_user.locator('#userColorForm button[type=submit]').click()
+        response = response_info.value
+        assert response.status == 204
+        assert response.request.post_data_json == {'colorKey': 'green'}
+        normal_user.locator('#userColorSuccess').wait_for(state='visible')
+        assert mady.get_attribute('data-user-color') == 'green'
+        assert mady.evaluate('(el) => getComputedStyle(el).backgroundColor') != mady_bg
+
+        api_state = normal_user.evaluate("async () => (await fetch('/api/state')).json()")
+        assert api_state['user']['id'] == 'M'
+        assert api_state['user']['colorKey'] == 'green'
+        assert next(user for user in api_state['users'] if user['id'] == 'M')['colorKey'] == 'green'
+
+        normal_user.reload()
+        mady = normal_user.locator('.filter-button[data-filter="M"]')
+        mady.wait_for(state='visible')
+        assert mady.get_attribute('data-user-color') == 'green'
+        normal_user.locator('#settingsButton').click()
+        normal_user.locator('#settingsDialog').wait_for(state='visible')
+        assert normal_user.locator('#userColorOptions input[value="green"]').is_checked()
 
         assert not errors, errors
         browser.close()
