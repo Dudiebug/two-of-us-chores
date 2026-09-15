@@ -33,16 +33,19 @@ jobs:
           mkdir -p work release
           cp unsigned/chores-1.2.4-unsigned.apk work/chores-1.2.4-unsigned.apk
           cat releases/signed-apk-1.2.4.patch.part* > /tmp/chores-1.2.4-signed.patch
-          test "$(sha256sum /tmp/chores-1.2.4-signed.patch | awk '{print $1}')" = "$(jq -r .patch_sha256 releases/publish-1.2.4.json)"
+          echo "Signed delta bytes: $(wc -c < /tmp/chores-1.2.4-signed.patch)"
+          echo "Signed delta SHA256: $(sha256sum /tmp/chores-1.2.4-signed.patch | awk '{print $1}')"
           test "$(sha256sum work/chores-1.2.4-unsigned.apk | awk '{print $1}')" = "$(jq -r .unsigned_sha256 releases/publish-1.2.4.json)"
           (
             cd work
             git apply --binary /tmp/chores-1.2.4-signed.patch
           )
           test -f work/chores-1.2.4-v2v3.apk
-          test "$(sha256sum work/chores-1.2.4-v2v3.apk | awk '{print $1}')" = "$(jq -r .signed_sha256 releases/publish-1.2.4.json)"
+          ACTUAL_SIGNED=$(sha256sum work/chores-1.2.4-v2v3.apk | awk '{print $1}')
+          echo "Reconstructed signed SHA256: $ACTUAL_SIGNED"
+          test "$ACTUAL_SIGNED" = "$(jq -r .signed_sha256 releases/publish-1.2.4.json)"
           cp work/chores-1.2.4-v2v3.apk release/chores-1.2.4.apk
-          printf '%s  chores-1.2.4.apk\n' "$(jq -r .signed_sha256 releases/publish-1.2.4.json)" > release/SHA256SUMS.txt
+          printf '%s  chores-1.2.4.apk\n' "$ACTUAL_SIGNED" > release/SHA256SUMS.txt
       - name: Verify signature and package identity
         run: |
           BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
