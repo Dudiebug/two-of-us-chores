@@ -1,0 +1,91 @@
+name: Publish Chores 1.2.2
+on:
+  push:
+    branches: [main]
+    paths: [releases/publish-1.2.2.json, .github/workflows/publish-chores-1.2.2.yml]
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: chores-v122-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download verified unsigned 1.2.2 build
+        run: |
+          RUN=$(jq -r .build_run releases/publish-1.2.2.json)
+          SOURCE=$(jq -r .source_commit releases/publish-1.2.2.json)
+          [[ "$RUN" =~ ^[0-9]+$ ]]
+          [[ "$SOURCE" =~ ^[a-f0-9]{40}$ ]]
+          test "$(gh run view "$RUN" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = success
+          test "$(gh run view "$RUN" --repo "$GITHUB_REPOSITORY" --json headSha --jq .headSha)" = "$SOURCE"
+          gh run download "$RUN" --repo "$GITHUB_REPOSITORY" --name chores-1.2.2-unsigned --dir unsigned
+      - name: Attach public APK signature without private key material
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,gzip,hashlib,json,struct
+          m=json.loads(Path('releases/publish-1.2.2.json').read_text())
+          source=Path('unsigned/chores-1.2.2-unsigned.apk').read_bytes()
+          assert hashlib.sha256(source).hexdigest()==m['unsigned_sha256']
+          eocd=source.rfind(b'PK\x05\x06'); assert eocd>0
+          cd=struct.unpack_from('<I',source,eocd+16)[0]
+          assert source[cd:cd+4]==b'PK\x01\x02'
+          block=gzip.decompress(base64.b64decode(m['signing_block_gzip_base64'],validate=True))
+          assert len(block)==m['signing_block_bytes']
+          assert block[-16:]==b'APK Sig Block 42'
+          signed=bytearray(source[:cd]+block+source[cd:])
+          struct.pack_into('<I',signed,eocd+len(block)+16,cd+len(block))
+          assert hashlib.sha256(signed).hexdigest()==m['signed_sha256']
+          Path('release').mkdir()
+          Path('release/chores-1.2.2.apk').write_bytes(signed)
+          Path('release/SHA256SUMS.txt').write_text(m['signed_sha256']+'  chores-1.2.2.apk\n')
+          PY
+      - name: Verify signature, version and Chores launcher resources
+        run: |
+          BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BT/apksigner" verify --verbose --print-certs release/chores-1.2.2.apk > release/VERIFICATION.txt
+          grep -qi '80becf7ffa79093f07cfc4cb13ab42da0be05eb73855e106103150fb13520cc8' release/VERIFICATION.txt
+          "$BT/aapt" dump badging release/chores-1.2.2.apk > release/package.txt
+          grep -q "name='net.dudiebug.chores'" release/package.txt
+          grep -q "versionCode='6'" release/package.txt
+          grep -q "versionName='1.2.2'" release/package.txt
+          grep -q "application-label:'Chores'" release/package.txt
+          "$BT/aapt" dump resources release/chores-1.2.2.apk > release/resources.txt
+          grep -q 'chores_launcher' release/resources.txt
+          grep -q 'chores_launcher_monochrome' release/resources.txt
+      - name: Publish Chores 1.2.2
+        run: |
+          SOURCE=$(jq -r .source_commit releases/publish-1.2.2.json)
+          git merge-base --is-ancestor "$SOURCE" HEAD
+          git diff --exit-code "$SOURCE" HEAD -- src public deploy android tools test docs README.md Dockerfile install.sh .env.example package.json pnpm-lock.yaml
+          if gh release view v1.2.2 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Refusing to overwrite an existing v1.2.2 release.' >&2
+            exit 1
+          fi
+          cat > release/notes.md <<'EOF'
+          # Chores 1.2.2
+
+          Adds administrator-managed, theme-safe user colors on top of the 1.2.1 launcher-icon hotfix.
+
+          - Admins choose a color when creating or editing a user.
+          - Fixed palette: Teal, Rose, Blue, Violet, Amber, and Green.
+          - Chore/history ownership, person filters, calendar indicators, and admin membership swatches use the assigned color.
+          - Each palette entry has light, dark, and Pink-theme variants; arbitrary hex colors are intentionally rejected so contrast stays predictable.
+          - Existing users default to Teal; legacy Mady migrates to Rose to preserve the previous visual distinction.
+          - Includes the dedicated adaptive/monochrome Chores launcher resources from 1.2.1.
+
+          This update changes the server database/API/UI, so update the LXC first:
+          `cd /opt/two-of-us-chores && bash install.sh --update`
+
+          Then install `chores-1.2.2.apk` over the existing Android app. Package ID and signing certificate are unchanged; no uninstall is required.
+          EOF
+          gh release create v1.2.2 --repo "$GITHUB_REPOSITORY" --target "$(git rev-parse HEAD)" --title 'Chores 1.2.2' --notes-file release/notes.md release/chores-1.2.2.apk release/SHA256SUMS.txt release/VERIFICATION.txt
