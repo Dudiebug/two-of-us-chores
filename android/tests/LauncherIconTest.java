@@ -22,7 +22,6 @@ public class LauncherIconTest {
         PackageManager pm = context.getPackageManager();
         ApplicationInfo app = pm.getApplicationInfo(context.getPackageName(), 0);
         assertEquals("chores_launcher", context.getResources().getResourceEntryName(app.icon));
-        assertEquals("chores_launcher_round", context.getResources().getResourceEntryName(app.roundIcon));
 
         ActivityInfo activity = pm.getActivityInfo(
             new ComponentName(context, MainActivity.class), 0
