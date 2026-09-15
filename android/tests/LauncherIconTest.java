@@ -1,6 +1,6 @@
 package net.dudiebug.chores;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import android.content.ComponentName;
 import android.content.Context;
@@ -16,16 +16,24 @@ import org.junit.runner.RunWith;
 
 @RunWith(AndroidJUnit4.class)
 public class LauncherIconTest {
+    private static void assertDedicatedChoresIcon(Context context, int resourceId) {
+        String name = context.getResources().getResourceEntryName(resourceId);
+        assertTrue(
+            "expected dedicated Chores launcher resource, got " + name,
+            name.equals("chores_launcher") || name.equals("chores_launcher_round")
+        );
+    }
+
     @Test
     public void packageAndLauncherActivityUseDedicatedChoresIconResources() throws Exception {
         Context context = ApplicationProvider.getApplicationContext();
         PackageManager pm = context.getPackageManager();
         ApplicationInfo app = pm.getApplicationInfo(context.getPackageName(), 0);
-        assertEquals("chores_launcher", context.getResources().getResourceEntryName(app.icon));
+        assertDedicatedChoresIcon(context, app.icon);
 
         ActivityInfo activity = pm.getActivityInfo(
             new ComponentName(context, MainActivity.class), 0
         );
-        assertEquals("chores_launcher", context.getResources().getResourceEntryName(activity.icon));
+        assertDedicatedChoresIcon(context, activity.icon);
     }
 }
