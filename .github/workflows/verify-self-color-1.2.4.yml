@@ -24,7 +24,9 @@ jobs:
           distribution: temurin
           java-version: '21'
       - name: Apply self-service color update
-        run: python3 updates/apply-1.2.4-self-color.py
+        run: |
+          python3 updates/apply-1.2.4-self-color.py
+          python3 updates/fix-1.2.4-self-color-refresh.py
       - name: Install rendered UI dependencies
         run: |
           python3 -m pip install --quiet cairosvg playwright
