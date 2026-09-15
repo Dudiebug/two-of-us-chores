@@ -1,0 +1,54 @@
+name: Verify Chores 1.2.3
+on:
+  push:
+    branches: [hotfix/chores-1.2.3-hide-single-group]
+    paths: [updates/apply-1.2.3.py]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Apply 1.2.3 UI change
+        run: |
+          python3 updates/apply-1.2.3.py
+          grep -Fq '$(".group-toolbar").hidden = state.groups.length === 1;' public/app.js
+      - name: Install icon renderer
+        run: python3 -m pip install --quiet cairosvg
+      - name: Run full tests and build Android 1.2.3
+        run: bash android/build-1.2.sh
+      - name: Verify APK identity
+        run: |
+          APK=android/capacitor/dist/chores-1.2.3-unsigned.apk
+          BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BT/aapt" dump badging "$APK" | tee /tmp/badging.txt
+          grep -q "name='net.dudiebug.chores'" /tmp/badging.txt
+          grep -q "versionCode='7'" /tmp/badging.txt
+          grep -q "versionName='1.2.3'" /tmp/badging.txt
+          grep -q "application-label:'Chores'" /tmp/badging.txt
+          "$BT/aapt" dump resources "$APK" > /tmp/resources.txt
+          grep -q 'chores_launcher' /tmp/resources.txt
+      - name: Commit verified UI change
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public/app.js
+          git commit -m 'Hide group picker for single-group users'
+          git push origin HEAD:hotfix/chores-1.2.3-hide-single-group
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chores-1.2.3-unsigned
+          path: android/capacitor/dist/
+          if-no-files-found: error
+          retention-days: 3
