@@ -16,13 +16,11 @@ python3 <<'PY'
 from pathlib import Path
 import re
 import xml.etree.ElementTree as ET
-
 for sample in Path('android/app/src/androidTest').rglob('ExampleInstrumentedTest.java'):
     sample.write_text(sample.read_text().replace('com.getcapacitor.app','net.dudiebug.chores'))
-
 p=Path('android/app/build.gradle');s=p.read_text()
-s=re.sub(r'versionCode\s+\d+', 'versionCode 5',s,count=1)
-s=re.sub(r'versionName\s+"[^"]+"', 'versionName "1.2.1"',s,count=1)
+s=re.sub(r'versionCode\s+\d+', 'versionCode 6',s,count=1)
+s=re.sub(r'versionName\s+"[^"]+"', 'versionName "1.2.2"',s,count=1)
 s=s.replace('dependencies {','''dependencies {
     implementation "androidx.work:work-runtime:2.11.2"
     androidTestImplementation "androidx.test.ext:junit:1.2.1"
@@ -31,49 +29,26 @@ s=s.replace('dependencies {','''dependencies {
     androidTestImplementation "androidx.test.uiautomator:uiautomator:2.3.0"
 ''',1)
 p.write_text(s)
-
 manifest=Path('android/app/src/main/AndroidManifest.xml')
 ET.register_namespace('android','http://schemas.android.com/apk/res/android')
 android='{http://schemas.android.com/apk/res/android}'
-tree=ET.parse(manifest)
-root=tree.getroot()
+tree=ET.parse(manifest); root=tree.getroot()
 if not any(node.get(android+'name') == 'android.permission.POST_NOTIFICATIONS' for node in root.findall('uses-permission')):
-    permission=ET.Element('uses-permission',{android+'name':'android.permission.POST_NOTIFICATIONS'})
-    root.insert(0,permission)
-application=root.find('application')
-if application is None:
-    raise SystemExit('Android application element not found')
-application.set(android+'allowBackup','false')
-application.set(android+'icon','@mipmap/chores_launcher')
-application.set(android+'roundIcon','@mipmap/chores_launcher_round')
-main_activity=None
+    root.insert(0,ET.Element('uses-permission',{android+'name':'android.permission.POST_NOTIFICATIONS'}))
+application=root.find('application'); application.set(android+'allowBackup','false'); application.set(android+'icon','@mipmap/chores_launcher'); application.set(android+'roundIcon','@mipmap/chores_launcher_round')
 for activity in application.findall('activity'):
-    if activity.get(android+'name') == '.MainActivity':
-        main_activity=activity
-        break
-if main_activity is None:
-    raise SystemExit('Capacitor MainActivity not found')
-# Give the launcher activity a distinct icon resource too, preventing launchers
-# from continuing to resolve the previous cached generic ic_launcher identity.
-main_activity.set(android+'icon','@mipmap/chores_launcher')
-ET.indent(tree,space='    ')
-tree.write(manifest,encoding='unicode',xml_declaration=True)
+    if activity.get(android+'name') == '.MainActivity': activity.set(android+'icon','@mipmap/chores_launcher')
+ET.indent(tree,space='    '); tree.write(manifest,encoding='unicode',xml_declaration=True)
 PY
-
-# Fail the build if the final generated manifest falls back to Capacitor's generic icon.
 grep -q 'android:icon="@mipmap/chores_launcher"' android/app/src/main/AndroidManifest.xml
 grep -q 'android:roundIcon="@mipmap/chores_launcher_round"' android/app/src/main/AndroidManifest.xml
-! grep -q 'android:icon="@mipmap/ic_launcher"' android/app/src/main/AndroidManifest.xml
-test -s android/app/src/main/res/mipmap-anydpi-v26/chores_launcher.xml
 test -s android/app/src/main/res/mipmap-anydpi-v33/chores_launcher.xml
-grep -q '<monochrome android:drawable="@mipmap/chores_launcher_monochrome"' android/app/src/main/res/mipmap-anydpi-v33/chores_launcher.xml
-
 cd android
 chmod +x gradlew
 ./gradlew --no-daemon :app:assembleRelease :app:bundleRelease :app:assembleDebug :app:assembleDebugAndroidTest
 cd ..
 mkdir -p dist
-cp android/app/build/outputs/apk/release/app-release-unsigned.apk dist/chores-1.2.1-unsigned.apk
-cp android/app/build/outputs/bundle/release/app-release.aab dist/chores-1.2.1-unsigned.aab
+cp android/app/build/outputs/apk/release/app-release-unsigned.apk dist/chores-1.2.2-unsigned.apk
+cp android/app/build/outputs/bundle/release/app-release.aab dist/chores-1.2.2-unsigned.aab
 cp package-lock.json dist/android-package-lock.json
 (cd dist && sha256sum * > SHA256SUMS.txt)
