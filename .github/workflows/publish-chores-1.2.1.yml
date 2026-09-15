@@ -1,0 +1,91 @@
+name: Publish Chores 1.2.1
+on:
+  push:
+    branches: [main]
+    paths: [releases/publish-1.2.1.json, .github/workflows/publish-chores-1.2.1.yml]
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: chores-v121-publication
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download verified unsigned hotfix build
+        run: |
+          RUN=$(jq -r .build_run releases/publish-1.2.1.json)
+          SOURCE=$(jq -r .source_commit releases/publish-1.2.1.json)
+          [[ "$RUN" =~ ^[0-9]+$ ]]
+          [[ "$SOURCE" =~ ^[a-f0-9]{40}$ ]]
+          test "$(gh run view "$RUN" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = success
+          test "$(gh run view "$RUN" --repo "$GITHUB_REPOSITORY" --json headSha --jq .headSha)" = "$SOURCE"
+          gh run download "$RUN" --repo "$GITHUB_REPOSITORY" --name chores-1.2.1-unsigned --dir unsigned
+      - name: Attach public APK signature without private key material
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,gzip,hashlib,json,struct
+          m=json.loads(Path('releases/publish-1.2.1.json').read_text())
+          source=Path('unsigned/chores-1.2.1-unsigned.apk').read_bytes()
+          assert hashlib.sha256(source).hexdigest()==m['unsigned_sha256']
+          eocd=source.rfind(b'PK\x05\x06'); assert eocd>0
+          cd=struct.unpack_from('<I',source,eocd+16)[0]
+          assert source[cd:cd+4]==b'PK\x01\x02'
+          block=gzip.decompress(base64.b64decode(m['signing_block_gzip_base64'],validate=True))
+          assert len(block)==m['signing_block_bytes']
+          assert block[-16:]==b'APK Sig Block 42'
+          signed=bytearray(source[:cd]+block+source[cd:])
+          struct.pack_into('<I',signed,eocd+len(block)+16,cd+len(block))
+          assert hashlib.sha256(signed).hexdigest()==m['signed_sha256']
+          Path('release').mkdir()
+          Path('release/chores-1.2.1.apk').write_bytes(signed)
+          Path('release/SHA256SUMS.txt').write_text(m['signed_sha256']+'  chores-1.2.1.apk\n')
+          PY
+      - name: Verify signature, version and launcher resource identity
+        run: |
+          BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BT/apksigner" verify --verbose --print-certs release/chores-1.2.1.apk > release/VERIFICATION.txt
+          grep -qi '80becf7ffa79093f07cfc4cb13ab42da0be05eb73855e106103150fb13520cc8' release/VERIFICATION.txt
+          "$BT/aapt" dump badging release/chores-1.2.1.apk > release/package.txt
+          grep -q "name='net.dudiebug.chores'" release/package.txt
+          grep -q "versionCode='5'" release/package.txt
+          grep -q "versionName='1.2.1'" release/package.txt
+          grep -q "application-label:'Chores'" release/package.txt
+          "$BT/aapt" dump resources release/chores-1.2.1.apk > release/resources.txt
+          grep -q 'chores_launcher' release/resources.txt
+          grep -q 'chores_launcher_round' release/resources.txt
+          grep -q 'chores_launcher_foreground' release/resources.txt
+          grep -q 'chores_launcher_monochrome' release/resources.txt
+      - name: Publish Chores 1.2.1
+        run: |
+          SOURCE=$(jq -r .source_commit releases/publish-1.2.1.json)
+          git merge-base --is-ancestor "$SOURCE" HEAD
+          git diff --exit-code "$SOURCE" HEAD -- src public deploy android tools test docs README.md Dockerfile install.sh .env.example package.json pnpm-lock.yaml
+          if gh release view v1.2.1 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Refusing to overwrite an existing v1.2.1 release.' >&2
+            exit 1
+          fi
+          cat > release/notes.md <<'EOF'
+          # Chores 1.2.1
+
+          Android launcher icon hotfix only. No server or database changes are required.
+
+          - Changes launcher resources from Capacitor's generic `ic_launcher` identity to dedicated `chores_launcher` resources.
+          - Uses a proper adaptive icon: teal background plus a transparent checklist foreground.
+          - Adds an Android 13+ monochrome checklist layer for themed icons.
+          - Keeps app name `Chores`, package `net.dudiebug.chores`, and the original Android signing certificate.
+          - Version 1.2.1 / version code 5 installs directly over 1.2.0.
+
+          Verification includes the full Node test suite, APK resource inspection, and Android API 35 instrumentation asserting PackageManager resolves both the application and launcher activity to the new Chores icon resource IDs.
+
+          Install `chores-1.2.1.apk` over the existing app. No LXC update is necessary for this icon-only hotfix.
+          EOF
+          gh release create v1.2.1 --repo "$GITHUB_REPOSITORY" --target "$(git rev-parse HEAD)" --title 'Chores 1.2.1' --notes-file release/notes.md release/chores-1.2.1.apk release/SHA256SUMS.txt release/VERIFICATION.txt
