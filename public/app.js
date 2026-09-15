@@ -188,6 +188,7 @@ import { occurrencesInRange } from "./calendar-recurrence.js";
     groupSelect.innerHTML = state.groups.map((g) => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`).join("");
     groupSelect.value = state.groupId || "";
     groupSelect.disabled = state.groups.length < 2;
+    $(".group-toolbar").hidden = state.groups.length === 1;
     $("#groupTimezone").textContent = data.activeGroup?.timeZone || "Ask an administrator to add you to a group.";
     $("#adminButton").hidden = !data.user?.isAdmin;
     const groupUrl = new URL(location.href);
