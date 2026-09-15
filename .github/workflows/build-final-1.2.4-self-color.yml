@@ -18,6 +18,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Install icon renderer
+        run: python3 -m pip install --quiet cairosvg
       - name: Build and test final 1.2.4 source
         run: bash android/build-1.2.sh
       - name: Verify APK identity
