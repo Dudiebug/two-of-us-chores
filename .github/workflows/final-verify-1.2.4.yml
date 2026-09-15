@@ -40,6 +40,11 @@ jobs:
           grep -q "versionCode='8'" /tmp/badging.txt
           grep -q "versionName='1.2.4'" /tmp/badging.txt
           grep -q "application-label:'Chores'" /tmp/badging.txt
+      - name: Confirm release behavior scope
+        run: |
+          grep -Fq 'user-colors.css?v=1.2.4' public/index.html
+          grep -Fq 'mobile-dialogs.css?v=1.2.4' public/index.html
+          grep -Fq '"/user-colors.css", "/mobile-dialogs.css"' src/server.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: chores-1.2.4-final-unsigned
