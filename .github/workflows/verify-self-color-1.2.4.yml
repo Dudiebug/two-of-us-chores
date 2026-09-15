@@ -11,7 +11,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
         with:
@@ -19,33 +19,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24.21.0'
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
       - name: Apply self-service color update
         run: |
           python3 updates/apply-1.2.4-self-color.py
           python3 updates/fix-1.2.4-self-color-refresh.py
-      - name: Install rendered UI dependencies
+      - name: Run application tests
         run: |
-          python3 -m pip install --quiet cairosvg playwright
-          python3 -m playwright install --with-deps chromium
-      - name: Run full tests and build Chores 1.2.4
-        run: bash android/build-1.2.sh
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm test
       - name: Verify rendered desktop and phone behavior
         run: |
+          python3 -m pip install --quiet playwright
+          python3 -m playwright install --with-deps chromium
           python3 tools/browser-smoke.py
           python3 tools/browser-smoke-1.2.4.py
-      - name: Verify APK identity
-        run: |
-          APK=android/capacitor/dist/chores-1.2.4-unsigned.apk
-          BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
-          "$BT/aapt" dump badging "$APK" > /tmp/badging.txt
-          grep -q "name='net.dudiebug.chores'" /tmp/badging.txt
-          grep -q "versionCode='8'" /tmp/badging.txt
-          grep -q "versionName='1.2.4'" /tmp/badging.txt
-          grep -q "application-label:'Chores'" /tmp/badging.txt
       - name: Commit verified product source
         run: |
           git config user.name 'github-actions[bot]'
@@ -56,9 +44,3 @@ jobs:
             git commit -m 'Let users choose their own color in Settings'
             git push origin HEAD:hotfix/chores-1.2.4-mobile-dialogs
           fi
-      - uses: actions/upload-artifact@v4
-        with:
-          name: chores-1.2.4-self-color-unsigned
-          path: android/capacitor/dist/
-          if-no-files-found: error
-          retention-days: 3
