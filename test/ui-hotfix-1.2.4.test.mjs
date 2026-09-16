@@ -7,9 +7,10 @@ const index = await readFile(new URL('public/index.html', root), 'utf8');
 const app = await readFile(new URL('public/app.js', root), 'utf8');
 const colors = await readFile(new URL('public/user-colors.css', root), 'utf8');
 const dialogs = await readFile(new URL('public/mobile-dialogs.css', root), 'utf8');
+const styles = await readFile(new URL('public/styles.css', root), 'utf8');
 const server = await readFile(new URL('src/server.mjs', root), 'utf8');
 
-test('1.2.4 loads and serves palette/mobile dialog styles', () => {
+test('1.2.4+ loads and serves palette/mobile dialog styles', () => {
   assert.match(index, /user-colors\.css\?v=1\.2\.4/);
   assert.match(index, /mobile-dialogs\.css\?v=1\.2\.4/);
   assert.match(colors, /#choreAssignee\[data-user-color\]/);
@@ -26,10 +27,12 @@ test('normal app UI renders configured user colors directly', () => {
   assert.match(app, /choreAssignee.*syncAssigneeColor|syncAssigneeColor\(\)/);
 });
 
-test('Settings and Admin mobile sheets leave a safe top gap and scroll internally', () => {
-  assert.match(dialogs, /#settingsDialog,[\s\S]*#adminDialog/);
-  assert.match(dialogs, /84dvh/);
+test('Chore, Settings and Admin mobile sheets share the safe height and scroll internally', () => {
+  assert.match(dialogs, /#choreDialog,[\s\S]*#settingsDialog,[\s\S]*#adminDialog/);
+  assert.match(dialogs, /height:\s*min\(84dvh/);
+  assert.match(dialogs, /max-height:\s*min\(84dvh/);
   assert.match(dialogs, /safe-area-inset-top/);
-  assert.match(dialogs, /overflow-y:\s*auto/);
-  assert.doesNotMatch(dialogs, /#choreDialog/);
+  assert.match(dialogs, /#choreDialog \.dialog-body,[\s\S]*#settingsDialog \.dialog-body,[\s\S]*#adminDialog \.dialog-body[\s\S]*overflow-y:\s*auto/);
+  assert.doesNotMatch(dialogs, /#confirmDialog/);
+  assert.match(styles, /\.confirm-dialog\s*\{[^}]*margin:\s*auto;[^}]*border-radius:/s);
 });
