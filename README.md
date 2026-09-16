@@ -147,9 +147,18 @@ The Compose resource settings are one CPU and a 256 MB memory ceiling. They are 
 | `DATA_DIR`, `DATABASE_PATH` | Persistent SQLite location; Docker defaults to `/data/chores.db`. |
 | `BACKUP_DIR` | Default backup directory; Docker defaults to `/data/backups`. |
 | `VAPID_SUBJECT`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Push is enabled when all three are set. The wizard clears the contact but retains the keys when disabling push. |
+| `FIREBASE_SERVICE_ACCOUNT_PATH` | Absolute path to the private Firebase service-account JSON used for immediate Android FCM delivery. If omitted, Android keeps the native polling fallback. Never commit this file. |
 | `ALLOW_INSECURE_LOCALHOST` | `true` only for local HTTP development. |
 
 VAPID keys can be generated after dependencies are installed with `pnpm exec web-push generate-vapid-keys`. Push still requires HTTPS and, on iOS/iPadOS, an installed Home Screen PWA.
+
+For native LXC deployments, store the Firebase service-account JSON outside the Git
+checkout, owned by `root:chores` with mode `0640`, and set
+`FIREBASE_SERVICE_ACCOUNT_PATH` in `/etc/two-of-us-chores.env`. Restart the service
+after changing the setting. The installer preserves this extra setting on later
+configuration runs, but its normal database/config recovery bundle does not copy the
+credential file; retain a separate private recovery copy or generate and revoke a key
+in Firebase when replacing it.
 
 ## Proxmox LXC deployment
 

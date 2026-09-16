@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { openDatabase, publicState, transaction, CAN_UNDO } from "./db.mjs";
 import { daysBetween, localDateTime, nextOccurrence, normalizeSchedule, shiftSeries } from "./recurrence.mjs";
 import { createPush } from "./push.mjs";
+import { createFcm, validFcmToken } from "./fcm.mjs";
 import { createScheduler, rolloverMissed } from "./scheduler.mjs";
 import { newSession, parseCookies, passwordHash, passwordMatches, sessionCookie, SESSION_COOKIE, tokenHash } from "./security.mjs";
 import { validateUserColor } from "./user-colors.mjs";
@@ -35,6 +36,7 @@ export async function createApp(options = {}) {
   );
   if (!db.prepare("SELECT 1 FROM users LIMIT 1").get()) throw new Error("No accounts configured. Run node deploy/bootstrap.mjs before starting Chores.");
   const push = options.push || createPush(db, env);
+  const fcm = options.fcm || createFcm(db, env);
   const clock = options.now || (() => new Date());
   const clients = new Map();
   const throttle = new Map();
@@ -54,10 +56,19 @@ export async function createApp(options = {}) {
   };
   const timeZone = env.HOUSEHOLD_TIMEZONE || "America/Los_Angeles";
   const sendWebPush = push.send.bind(push);
+  const sendNative = async (userId, title, body, options = {}) => {
+    const event = queueNativeNotification(db, userId, title, body, options);
+    if (!event) return false;
+    if (fcm.configured) {
+      try { await fcm.send(userId, event); }
+      catch (error) { console.error("FCM notification failed", error?.name || "Error"); }
+    }
+    return true;
+  };
   const send = async (userId, title, body, options = {}) => {
     if (!db.prepare("SELECT 1 FROM users WHERE id=? AND active=1").get(userId)) return false;
     if (options.groupId && !groupsForUser(db, userId).some((g) => g.id === options.groupId)) return false;
-    const queued = queueNativeNotification(db, userId, title, body, options);
+    const queued = await sendNative(userId, title, body, options);
     let delivered = false;
     try { delivered = await sendWebPush(userId, title, body, options); } catch (error) { if (!queued) throw error; }
     return queued || delivered;
@@ -75,9 +86,12 @@ export async function createApp(options = {}) {
       const url = new URL(req.url || "/", appOrigin);
       const path = url.pathname;
       if (req.method === "GET" && path === "/healthz") return json(res, 200, { ok: true });
-      if (req.method !== "GET" && path.startsWith("/api/")) enforceMutation(req, appOrigin, needsJsonBody(req, path));
+      const nativeTokenUpdate = req.method === "PUT" && path === "/api/native-notifications/token";
+      if (req.method !== "GET" && path.startsWith("/api/") && !nativeTokenUpdate) enforceMutation(req, appOrigin, needsJsonBody(req, path));
+      if (nativeTokenUpdate && req.headers["content-type"]?.split(";")[0].trim().toLowerCase() !== "application/json") throw Object.assign(new Error("JSON required"), { status: 415 });
       if (req.method === "POST" && path === "/api/session") return await login(req, res, db, localInsecure, throttle);
       if (req.method === "GET" && path === "/api/native-notifications") return nativeNotifications(req, res, db, url);
+      if (nativeTokenUpdate) return await updateNativePushToken(req, res, db);
 
       const session = authenticate(req, db);
       if (req.method === "GET" && path === "/") return redirect(res, session ? "/app" : "/login");
@@ -122,7 +136,7 @@ export async function createApp(options = {}) {
       if (req.method === "POST" && path === "/api/native-test") {
         const body = await readJson(req);
         if (!validNativeDeviceId(body.deviceId) || !db.prepare("SELECT 1 FROM native_devices WHERE device_id=? AND user_id=? AND session_hash=?").get(body.deviceId, session.userId, session.tokenHash)) throw Object.assign(new Error("Enable native notifications first"), { status: 409 });
-        queueNativeNotification(db, session.userId, "Chores", "Native notifications are working on this device.", {});
+        await sendNative(session.userId, "Chores", "Native notifications are working on this device.", {});
         return noContent(res);
       }
       if (req.method === "POST" && path === "/api/push-test") return await pushTest(res, send, session.userId);
@@ -367,12 +381,15 @@ async function registerNativeDevice(req, res, db, session) {
   const body = await readJson(req);
   const deviceId = body?.deviceId;
   if (!validNativeDeviceId(deviceId)) throw bad("Invalid native device ID");
+  const fcmToken = body?.fcmToken;
+  if (fcmToken !== undefined && !validFcmToken(fcmToken)) throw bad("Invalid Firebase notification token");
   const issued = newSession();
   const now = new Date().toISOString();
   transaction(db, () => {
+    if (fcmToken) db.prepare("UPDATE native_devices SET fcm_token=NULL WHERE fcm_token=?").run(fcmToken);
     db.prepare("DELETE FROM native_devices WHERE user_id=? AND device_id=?").run(session.userId, deviceId);
-    db.prepare(`INSERT INTO native_devices(token_hash,user_id,session_hash,device_id,created_at,updated_at)
-      VALUES (?,?,?,?,?,?)`).run(issued.hash, session.userId, session.tokenHash, deviceId, now, now);
+    db.prepare(`INSERT INTO native_devices(token_hash,user_id,session_hash,device_id,fcm_token,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?)`).run(issued.hash, session.userId, session.tokenHash, deviceId, fcmToken || null, now, now);
   });
   const cursor = Number(db.prepare("SELECT COALESCE(MAX(id),0) AS id FROM native_notification_events WHERE user_id=?").get(session.userId).id || 0);
   return json(res, 200, { token: issued.token, cursor });
@@ -387,11 +404,7 @@ async function removeNativeDevice(req, res, db, session) {
 }
 
 function nativeNotifications(req, res, db, url) {
-  const match = /^Bearer\s+([A-Za-z0-9_-]{20,256})$/i.exec(req.headers.authorization || "");
-  if (!match) return json(res, 401, { error: "Native device authentication required" });
-  const device = db.prepare(`SELECT d.token_hash,d.user_id FROM native_devices d
-    JOIN sessions s ON s.token_hash=d.session_hash JOIN users u ON u.id=d.user_id
-    WHERE d.token_hash=? AND s.expires_at>? AND u.active=1`).get(tokenHash(match[1]), new Date().toISOString());
+  const device = nativeDevice(req, db);
   if (!device) return json(res, 401, { error: "Native device token expired" });
   const rawAfter = url.searchParams.get("after") || "0";
   if (!/^\d{1,18}$/.test(rawAfter)) throw bad("Invalid notification cursor");
@@ -407,16 +420,40 @@ function nativeNotifications(req, res, db, url) {
   return json(res, 200, { events, cursor });
 }
 
+async function updateNativePushToken(req, res, db) {
+  const device = nativeDevice(req, db);
+  if (!device) return json(res, 401, { error: "Native device token expired" });
+  const { fcmToken } = await readJson(req);
+  if (!validFcmToken(fcmToken)) throw bad("Invalid Firebase notification token");
+  transaction(db, () => {
+    db.prepare("UPDATE native_devices SET fcm_token=NULL WHERE fcm_token=? AND token_hash<>?").run(fcmToken, device.token_hash);
+    db.prepare("UPDATE native_devices SET fcm_token=?,updated_at=? WHERE token_hash=?")
+      .run(fcmToken, new Date().toISOString(), device.token_hash);
+  });
+  return noContent(res);
+}
+
+function nativeDevice(req, db) {
+  const match = /^Bearer\s+([A-Za-z0-9_-]{20,256})$/i.exec(req.headers.authorization || "");
+  if (!match) return null;
+  return db.prepare(`SELECT d.token_hash,d.user_id FROM native_devices d
+    JOIN sessions s ON s.token_hash=d.session_hash JOIN users u ON u.id=d.user_id
+    WHERE d.token_hash=? AND s.expires_at>? AND u.active=1`).get(tokenHash(match[1]), new Date().toISOString());
+}
+
 function queueNativeNotification(db, userId, title, body, options = {}) {
-  if (!db.prepare("SELECT 1 FROM native_devices WHERE user_id=? LIMIT 1").get(userId)) return false;
+  if (!db.prepare("SELECT 1 FROM native_devices WHERE user_id=? LIMIT 1").get(userId)) return null;
   const now = new Date().toISOString();
-  db.prepare(`INSERT INTO native_notification_events(user_id,title,body,url,tag,created_at,group_id)
+  const result = db.prepare(`INSERT INTO native_notification_events(user_id,title,body,url,tag,created_at,group_id)
     VALUES (?,?,?,?,?,?,?)`).run(userId, String(title), String(body), options.url || "/app", options.tag || null, now, options.groupId || null);
   // Native clients use a cursor. A one-week retention bound prevents an abandoned
   // device from growing this table forever while still tolerating long offline gaps.
   const cutoff = new Date(Date.now() - 7 * 86400_000).toISOString();
   db.prepare("DELETE FROM native_notification_events WHERE created_at<?").run(cutoff);
-  return true;
+  return {
+    id: Number(result.lastInsertRowid), title: String(title), body: String(body),
+    url: options.url || "/app", tag: options.tag || null, groupId: options.groupId || null,
+  };
 }
 
 async function putSubscription(req, res, db, session) {

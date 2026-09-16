@@ -68,6 +68,7 @@ function ensureSchema(db, includeChores = true) {
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       session_hash TEXT NOT NULL REFERENCES sessions(token_hash) ON DELETE CASCADE,
       device_id TEXT NOT NULL,
+      fcm_token TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE(user_id,device_id)
@@ -84,6 +85,7 @@ function ensureSchema(db, includeChores = true) {
   `);
   ensureColumn(db, "users", "activity_notifications", "INTEGER NOT NULL DEFAULT 1 CHECK(activity_notifications IN (0,1))");
   ensureColumn(db, "push_subscriptions", "session_hash", "TEXT");
+  ensureColumn(db, "native_devices", "fcm_token", "TEXT");
   db.exec("DELETE FROM push_subscriptions WHERE session_hash IS NULL");
 
   if (!includeChores) return;
@@ -124,6 +126,7 @@ function ensureSchema(db, includeChores = true) {
     CREATE INDEX IF NOT EXISTS chores_due ON chores(next_due);
     CREATE INDEX IF NOT EXISTS subscriptions_user ON push_subscriptions(user_id);
     CREATE INDEX IF NOT EXISTS native_devices_user ON native_devices(user_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS native_devices_fcm_token ON native_devices(fcm_token) WHERE fcm_token IS NOT NULL;
     CREATE INDEX IF NOT EXISTS native_events_user_id ON native_notification_events(user_id,id);
 
   `);

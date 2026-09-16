@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "702929248717",
+    "project_id": "two-of-us-chores",
+    "storage_bucket": "two-of-us-chores.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:702929248717:android:58cd20d6abdcf90ac2a484",
+        "android_client_info": {
+          "package_name": "net.dudiebug.chores"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAPEda6nJme4WIkU7mVLUaG5BjrT82cihU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
