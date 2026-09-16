@@ -1,21 +1,22 @@
-/* Mobile-only sizing for the app's full-sheet dialogs.
-   Chore add/edit, Settings, and Admin all use the same safe-area-aware
-   sheet height so their close buttons stay reachable and long content scrolls
-   inside the sheet. The compact confirmation dialog intentionally remains
-   content-sized and centered. */
+/* Mobile-only sizing for every app dialog.
+   All popups use the Settings sheet as the mobile geometry baseline so their
+   close controls remain reachable and any excess content scrolls internally. */
 @media (max-width: 767px) {
   #choreDialog,
   #settingsDialog,
+  #confirmDialog,
   #adminDialog {
     width: 100%;
     height: min(84dvh, calc(100dvh - max(6rem, calc(env(safe-area-inset-top) + 3rem))));
     max-height: min(84dvh, calc(100dvh - max(6rem, calc(env(safe-area-inset-top) + 3rem))));
     margin: auto 0 0;
     overflow: hidden;
+    border-radius: 20px 20px 0 0;
   }
 
   #choreDialog .dialog-card,
   #settingsDialog .dialog-card,
+  #confirmDialog .dialog-card,
   #adminDialog .dialog-card {
     display: flex;
     flex-direction: column;
@@ -26,6 +27,7 @@
 
   #choreDialog .dialog-header,
   #settingsDialog .dialog-header,
+  #confirmDialog .dialog-header,
   #adminDialog .dialog-header {
     position: relative;
     top: auto;
@@ -34,6 +36,7 @@
 
   #choreDialog .dialog-body,
   #settingsDialog .dialog-body,
+  #confirmDialog .dialog-body,
   #adminDialog .dialog-body {
     flex: 1 1 auto;
     min-height: 0;
@@ -44,6 +47,7 @@
 
   #choreDialog .dialog-actions,
   #settingsDialog .dialog-actions,
+  #confirmDialog .dialog-actions,
   #adminDialog .dialog-actions {
     flex: 0 0 auto;
   }
