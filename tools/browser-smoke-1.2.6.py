@@ -20,7 +20,7 @@ def box(page, selector):
     return value
 
 
-def assert_full_sheet(page, selector, close_selector, expected_height=None):
+def assert_settings_height(page, selector, close_selector, expected_height=None):
     page.locator(selector).wait_for(state="visible")
     dialog = box(page, selector)
     close = box(page, close_selector)
@@ -51,22 +51,21 @@ try:
         page.wait_for_url("**/app**")
         page.locator("#adminButton").wait_for(state="visible")
 
-        # Settings is the mobile sheet geometry baseline.
+        # Settings is the mobile geometry baseline for every dialog.
         page.locator("#settingsButton").click()
-        settings = assert_full_sheet(page, "#settingsDialog", "#closeSettingsButton")
+        settings = assert_settings_height(page, "#settingsDialog", "#closeSettingsButton")
         baseline = settings["height"]
         page.locator("#closeSettingsButton").click()
         page.locator("#settingsDialog").wait_for(state="hidden")
 
-        # Admin must use exactly the same full-sheet geometry.
         page.locator("#adminButton").click()
-        assert_full_sheet(page, "#adminDialog", "#closeAdmin", baseline)
+        assert_settings_height(page, "#adminDialog", "#closeAdmin", baseline)
         page.locator("#closeAdmin").click()
         page.locator("#adminDialog").wait_for(state="hidden")
 
         # Add chore uses the same dialog element as Edit chore and must match Settings.
         page.locator("#addChoreButton").click()
-        assert_full_sheet(page, "#choreDialog", "#closeChoreButton", baseline)
+        assert_settings_height(page, "#choreDialog", "#closeChoreButton", baseline)
         page.locator("#choreTitle").fill("Dialog height regression")
         page.locator("#saveChoreButton").click()
         page.locator("#choreDialog").wait_for(state="hidden")
@@ -75,32 +74,26 @@ try:
         row.wait_for(state="visible")
         row.locator('[data-action="edit"]').click()
         assert page.locator("#choreDialogTitle").inner_text() == "Edit chore"
-        assert_full_sheet(page, "#choreDialog", "#closeChoreButton", baseline)
+        assert_settings_height(page, "#choreDialog", "#closeChoreButton", baseline)
 
         # Exercise the expanded edit UI that previously made the sheet nearly full-screen.
         page.locator("#scheduleKind").select_option("weekly")
         page.locator("#reminderMode").select_option("override")
         assert page.locator("#weekdayPicker").is_visible()
         assert page.locator("#reminderTimeField").is_visible()
-        expanded = assert_full_sheet(page, "#choreDialog", "#closeChoreButton", baseline)
+        expanded = assert_settings_height(page, "#choreDialog", "#closeChoreButton", baseline)
         assert abs(expanded["height"] - baseline) <= TOLERANCE
         body_metrics = page.locator("#choreDialog .dialog-body").evaluate(
             "el => ({clientHeight: el.clientHeight, scrollHeight: el.scrollHeight})"
         )
         assert body_metrics["scrollHeight"] >= body_metrics["clientHeight"], body_metrics
 
-        # The destructive confirmation is intentionally a compact centered confirmation,
-        # not a long form sheet. It still must remain fully reachable on the same phone.
+        # The delete confirmation is a separate dialog and must also use the
+        # Settings mobile height per the global popup sizing contract.
         page.locator("#deleteChoreButton").click()
-        page.locator("#confirmDialog").wait_for(state="visible")
-        confirm = box(page, "#confirmDialog")
-        confirm_close = box(page, "#closeConfirmButton")
-        assert confirm["height"] < baseline
-        assert confirm["y"] >= 0
-        assert confirm["y"] + confirm["height"] <= VIEWPORT["height"]
-        assert confirm_close["y"] >= confirm["y"]
-        assert confirm_close["y"] + confirm_close["height"] <= VIEWPORT["height"]
+        assert_settings_height(page, "#confirmDialog", "#closeConfirmButton", baseline)
         page.locator("#cancelConfirmButton").click()
+        page.locator("#confirmDialog").wait_for(state="hidden")
 
         browser.close()
 finally:
