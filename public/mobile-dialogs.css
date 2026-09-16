@@ -1,7 +1,10 @@
-/* Mobile-only sizing for the long Settings and Admin bottom sheets.
-   Keep them taller than the chore editor while leaving a comfortable,
-   safe-area-aware gap above the sheet so the close button is reachable. */
+/* Mobile-only sizing for the app's full-sheet dialogs.
+   Chore add/edit, Settings, and Admin all use the same safe-area-aware
+   sheet height so their close buttons stay reachable and long content scrolls
+   inside the sheet. The compact confirmation dialog intentionally remains
+   content-sized and centered. */
 @media (max-width: 767px) {
+  #choreDialog,
   #settingsDialog,
   #adminDialog {
     width: 100%;
@@ -11,6 +14,7 @@
     overflow: hidden;
   }
 
+  #choreDialog .dialog-card,
   #settingsDialog .dialog-card,
   #adminDialog .dialog-card {
     display: flex;
@@ -20,6 +24,7 @@
     min-height: 0;
   }
 
+  #choreDialog .dialog-header,
   #settingsDialog .dialog-header,
   #adminDialog .dialog-header {
     position: relative;
@@ -27,6 +32,7 @@
     flex: 0 0 auto;
   }
 
+  #choreDialog .dialog-body,
   #settingsDialog .dialog-body,
   #adminDialog .dialog-body {
     flex: 1 1 auto;
@@ -36,6 +42,7 @@
     -webkit-overflow-scrolling: touch;
   }
 
+  #choreDialog .dialog-actions,
   #settingsDialog .dialog-actions,
   #adminDialog .dialog-actions {
     flex: 0 0 auto;
