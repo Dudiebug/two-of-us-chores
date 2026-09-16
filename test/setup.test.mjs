@@ -118,6 +118,7 @@ test("invalid ports, origins, data paths and mismatched push keys cannot replace
     { PORT: "0" }, { PORT: "65536" }, { PORT: "3000x" },
     { APP_ORIGIN: "http://chores.example.com" }, { APP_ORIGIN: "https://chores.example.com/app" },
     { LISTEN_HOST: "not-an-address" }, { DATA_DIR: "relative" },
+    { FIREBASE_SERVICE_ACCOUNT_PATH: "relative/firebase.json" },
     { VAPID_PUBLIC_KEY: "broken" }, { HOUSEHOLD_TIMEZONE: "not/a/timezone" },
   ]) {
     assert.throws(() => writeConfig(config, validateConfig({ ...env, ...changes })));

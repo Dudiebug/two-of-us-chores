@@ -46,7 +46,8 @@
     if (s.notifications === "denied") { await p.openSettings(); return; }
     if (s.notifications !== "granted") s = await p.requestPermissions();
     if (s.notifications !== "granted") throw new Error("Notification permission was not granted. Enable it in Android settings to receive reminders.");
-    const data = await request("/api/native-device", "POST", { deviceId: deviceId() });
+    const firebase = await p.getFirebaseToken();
+    const data = await request("/api/native-device", "POST", { deviceId: deviceId(), fcmToken: firebase.token });
     try { await p.configure({ token: data.token, cursor: data.cursor }); }
     catch (error) { await request("/api/native-device", "DELETE", { deviceId: deviceId() }).catch(() => {}); throw error; }
     localStorage.removeItem("two-of-us-native-notifications");
@@ -79,7 +80,7 @@
       const result = await p.pollNow();
       if (result.expired) throw new Error("Notification registration expired. Disable and enable notifications again.");
       if (result.blocked) throw new Error("Android is blocking Chores notifications. Check the app's notification settings.");
-      if (!(result.posted > 0)) throw new Error("No notification was received from the server. Check the server version and your registration.");
+      if (!(result.posted > 0 || result.delivered > 0)) throw new Error("No notification was received from the server. Check the server version and your registration.");
     }),
   };
   document.addEventListener("visibilitychange", () => { if (!document.hidden && !busy) refresh(); });

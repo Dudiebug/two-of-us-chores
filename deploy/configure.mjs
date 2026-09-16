@@ -34,6 +34,9 @@ export function validateConfig(config) {
   for (const key of ["DATA_DIR", "DATABASE_PATH", "BACKUP_DIR"]) {
     if (!isAbsolute(config[key] || "")) throw Error(`${key} must be an absolute path.`);
   }
+  if (config.FIREBASE_SERVICE_ACCOUNT_PATH && !isAbsolute(config.FIREBASE_SERVICE_ACCOUNT_PATH)) {
+    throw Error("FIREBASE_SERVICE_ACCOUNT_PATH must be an absolute path.");
+  }
   if (config.VAPID_SUBJECT) {
     if (!/^mailto:[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.VAPID_SUBJECT) && !/^https:\/\//.test(config.VAPID_SUBJECT)) {
       throw Error("Push contact must be a mailto: email or HTTPS URL.");

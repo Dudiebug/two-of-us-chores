@@ -12,6 +12,7 @@ import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+import com.google.firebase.messaging.FirebaseMessaging;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -29,7 +30,7 @@ public class ChoresNotificationsPlugin extends Plugin {
         result.put("configured", ChoresNotificationWorker.isConfigured(getContext()));
         result.put("lastCheck", ChoresNotificationWorker.prefs(getContext()).getString("lastCheck", ""));
         result.put("lastError", ChoresNotificationWorker.prefs(getContext()).getString("lastError", ""));
-        result.put("version", "1.2.0"); call.resolve(result);
+        result.put("version", "1.3.0"); call.resolve(result);
     }
     @PluginMethod public void checkPermissions(PluginCall call) { getStatus(call); }
     @PluginMethod public void requestPermissions(PluginCall call) {
@@ -54,6 +55,16 @@ public class ChoresNotificationsPlugin extends Plugin {
             .setConstraints(new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build();
         WorkManager.getInstance(getContext()).enqueueUniquePeriodicWork(UNIQUE_WORK, ExistingPeriodicWorkPolicy.UPDATE, request);
         getStatus(call);
+    }
+    @PluginMethod public void getFirebaseToken(PluginCall call) {
+        FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
+            if (!task.isSuccessful() || task.getResult() == null || task.getResult().isEmpty()) {
+                call.reject("Firebase notification registration failed. Check your connection and try again."); return;
+            }
+            String token = task.getResult();
+            ChoresNotificationWorker.saveFirebaseToken(getContext(), token);
+            JSObject result = new JSObject(); result.put("token", token); call.resolve(result);
+        });
     }
     @PluginMethod public void disable(PluginCall call) {
         ChoresNotificationWorker.clearConfiguration(getContext());

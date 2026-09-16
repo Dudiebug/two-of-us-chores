@@ -111,12 +111,13 @@ test("activity delivery failure does not turn a committed completion or Undo int
   assert.equal(app.db.prepare("SELECT count(*) AS n FROM completion_history").get().n, 0);
 });
 
-async function runningApp(t, now, push = { configured: false, publicKey: null, send: async () => false }) {
+async function runningApp(t, now, push = { configured: false, publicKey: null, send: async () => false }, fcm = { configured: false, send: async () => false }) {
   const db = await openDatabase(":memory:", PASSWORDS);
   const app = await createApp({
     db,
     env: { APP_ORIGIN: "http://localhost:3000", ALLOW_INSECURE_LOCALHOST: "true" },
     push,
+    fcm,
     now,
   });
   await new Promise((resolve) => app.server.listen(0, "127.0.0.1", resolve));
@@ -220,6 +221,48 @@ test("activity notifications reach only the other person who opted in", async (t
 
   assert.equal((await app.request("/api/push-test", { method: "POST", body: "{}" })).status, 204);
   assert.deepEqual(sent[1].slice(0, 3), ["D", "Chores", "Push notifications are working on this device."]);
+});
+
+test("Android devices register FCM tokens, receive immediate events, and refresh tokens with native auth", async (t) => {
+  const sent = [];
+  const app = await runningApp(t, undefined, undefined, {
+    configured: true,
+    async send(...message) { sent.push(message); return true; },
+  });
+  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "D", password: PASSWORDS.DYLAN_PASSWORD }) });
+  const firstToken = "fcm-token:android-device-abcdefghijklmnopqrstuvwxyz";
+  const registered = await app.request("/api/native-device", {
+    method: "POST", body: JSON.stringify({ deviceId: "dylan-android-phone", fcmToken: firstToken }),
+  });
+  assert.equal(registered.status, 200);
+  const device = await registered.json();
+  assert.equal(app.db.prepare("SELECT fcm_token FROM native_devices WHERE device_id='dylan-android-phone'").get().fcm_token, firstToken);
+
+  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "M", password: PASSWORDS.MADY_PASSWORD }) });
+  const created = await app.request("/api/chores", {
+    method: "POST", body: JSON.stringify({ title: "Instant bins", assigneeId: "D", scheduleKind: "once", nextDue: "2099-01-01", reminderMode: "off" }),
+  });
+  assert.equal(created.status, 201);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0][0], "D");
+  assert.equal(sent[0][1].title, "Chore added");
+  assert.ok(Number.isSafeInteger(sent[0][1].id));
+
+  const queued = await fetch(`${app.url}/api/native-notifications?after=${device.cursor}`, { headers: { Authorization: `Bearer ${device.token}` } });
+  assert.equal(queued.status, 200);
+  assert.equal((await queued.json()).events.length, 1, "polling fallback retains the pushed event");
+
+  const nextToken = "fcm-token:refreshed-device-abcdefghijklmnopqrstuvwxyz";
+  const refreshed = await fetch(`${app.url}/api/native-notifications/token`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${device.token}`, "Content-Type": "application/json", Origin: "https://attacker.example" },
+    body: JSON.stringify({ fcmToken: nextToken }),
+  });
+  assert.equal(refreshed.status, 204, "bearer-authenticated native refresh does not depend on browser Origin");
+  assert.equal(app.db.prepare("SELECT fcm_token FROM native_devices WHERE device_id='dylan-android-phone'").get().fcm_token, nextToken);
+  assert.equal((await fetch(`${app.url}/api/native-notifications/token`, {
+    method: "PUT", headers: { Authorization: "Bearer invalid", "Content-Type": "application/json" }, body: JSON.stringify({ fcmToken: nextToken }),
+  })).status, 401);
 });
 
 test("API validates chore input and rejects stale atomic completion", async (t) => {
