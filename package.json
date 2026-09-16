@@ -12,7 +12,7 @@
     "backup": "node src/backup.mjs"
   },
   "dependencies": {
-    "google-auth-library": "11.1.0",
+    "google-auth-library": "11.0.2",
     "web-push": "^3.6.7"
   }
 }
