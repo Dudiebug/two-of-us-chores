@@ -1,0 +1,48 @@
+name: Verify Chores 1.2.6 dialog heights
+on:
+  push:
+    branches: [hotfix/chores-1.2.6-dialog-heights]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install browser/icon test dependencies
+        run: |
+          python3 -m pip install --quiet playwright cairosvg
+          python3 -m playwright install --with-deps chromium
+      - name: Run application suite
+        run: |
+          corepack enable
+          corepack pnpm@11.16.0 install --frozen-lockfile
+          corepack pnpm@11.16.0 test
+      - name: Audit rendered mobile dialogs
+        run: python3 tools/browser-smoke-1.2.6.py
+      - name: Build Android 1.2.6
+        run: bash android/build-1.2.sh
+      - name: Verify APK identity
+        run: |
+          APK=android/capacitor/dist/chores-1.2.6-unsigned.apk
+          BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BT/aapt" dump badging "$APK" > /tmp/badging.txt
+          grep -q "name='net.dudiebug.chores'" /tmp/badging.txt
+          grep -q "versionCode='10'" /tmp/badging.txt
+          grep -q "versionName='1.2.6'" /tmp/badging.txt
+          grep -q "application-label:'Chores'" /tmp/badging.txt
+          git rev-parse HEAD > android/capacitor/dist/SOURCE_COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chores-1.2.6-unsigned
+          path: android/capacitor/dist/
+          if-no-files-found: error
+          retention-days: 3
