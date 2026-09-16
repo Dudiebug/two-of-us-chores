@@ -1,7 +1,7 @@
 name: Verify Chores 1.2.6 dialog heights
 on:
   push:
-    branches: [hotfix/chores-1.2.6-dialog-heights]
+    branches: [main, hotfix/chores-1.2.6-dialog-heights]
 permissions:
   contents: read
 jobs:
