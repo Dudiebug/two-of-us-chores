@@ -2,6 +2,8 @@ name: Verify Chores 1.3 FCM
 on:
   push:
     branches: [main, chores-1.3-fcm]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
