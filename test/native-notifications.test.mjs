@@ -12,7 +12,7 @@ test("Capacitor native notifications have a separate authenticated delivery path
     readFile(new URL("../android/native/ChoresNotificationsPlugin.java", import.meta.url), "utf8"),
     readFile(new URL("../android/native/ChoresNotificationWorker.java", import.meta.url), "utf8"),
     readFile(new URL("../android/native/ChoresFirebaseMessagingService.java", import.meta.url), "utf8"),
-    readFile(new URL("../android/build-1.3.sh", import.meta.url), "utf8"),
+    readFile(new URL("../android/build-1.3.1.sh", import.meta.url), "utf8"),
     readFile(new URL("../android/capacitor/capacitor.config.json", import.meta.url), "utf8"),
     readFile(new URL("../android/firebase/google-services.json", import.meta.url), "utf8"),
   ]);
@@ -41,7 +41,10 @@ test("Capacitor native notifications have a separate authenticated delivery path
   assert.match(plugin, /void configure\(PluginCall call\)/);
   assert.match(plugin, /void pollNow\(PluginCall call\)/);
   assert.match(plugin, /FirebaseMessaging\.getInstance\(\)\.getToken\(\)/);
+  assert.match(plugin, /addOnCompleteListener\(executor/);
+  assert.match(plugin, /stageFirebaseToken\(getContext\(\), task\.getResult\(\)\)/);
   assert.match(worker, /class ChoresNotificationWorker extends Worker/);
+  assert.match(worker, /static void stageFirebaseToken\(Context c, String token\)/);
   assert.match(worker, /\/api\/native-notifications\?after=/);
   assert.match(worker, /NotificationCompat\.Builder/);
   assert.match(worker, /consumeDelivered/);
@@ -51,8 +54,8 @@ test("Capacitor native notifications have a separate authenticated delivery path
   assert.match(buildScript, /ChoresFirebaseMessagingService/);
   assert.match(buildScript, /androidx\.work:work-runtime:2\.11\.2/);
   assert.match(buildScript, /com\.google\.firebase:firebase-messaging/);
-  assert.match(buildScript, /versionCode 11/);
-  assert.match(buildScript, /versionName \"1\.3\.0\"/);
+  assert.match(buildScript, /versionCode 12/);
+  assert.match(buildScript, /versionName \"1\.3\.1\"/);
   assert.equal(config.appName, "Chores");
   assert.equal(config.appId, "net.dudiebug.chores");
   assert.equal(JSON.parse(firebaseConfig).client[0].client_info.android_client_info.package_name, "net.dudiebug.chores");
