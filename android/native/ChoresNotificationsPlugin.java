@@ -30,7 +30,7 @@ public class ChoresNotificationsPlugin extends Plugin {
         result.put("configured", ChoresNotificationWorker.isConfigured(getContext()));
         result.put("lastCheck", ChoresNotificationWorker.prefs(getContext()).getString("lastCheck", ""));
         result.put("lastError", ChoresNotificationWorker.prefs(getContext()).getString("lastError", ""));
-        result.put("version", "1.3.0"); call.resolve(result);
+        result.put("version", "1.3.1"); call.resolve(result);
     }
     @PluginMethod public void checkPermissions(PluginCall call) { getStatus(call); }
     @PluginMethod public void requestPermissions(PluginCall call) {
@@ -71,8 +71,13 @@ public class ChoresNotificationsPlugin extends Plugin {
         WorkManager.getInstance(getContext()).cancelUniqueWork(UNIQUE_WORK); getStatus(call);
     }
     @PluginMethod public void pollNow(PluginCall call) {
-        // Return the actual native result, not merely "work queued".
-        executor.execute(() -> {
+        // Refresh the current FCM token before polling. Existing 1.2/1.3 installs
+        // may already be configured and therefore never pass through enable() again.
+        // Token refresh failure must not disable the polling fallback.
+        FirebaseMessaging.getInstance().getToken().addOnCompleteListener(executor, task -> {
+            if (task.isSuccessful() && task.getResult() != null && !task.getResult().isEmpty()) {
+                ChoresNotificationWorker.stageFirebaseToken(getContext(), task.getResult());
+            }
             try { call.resolve(ChoresNotificationWorker.poll(getContext())); }
             catch (Exception error) { call.reject("Native notification check failed. Check your connection and try again."); }
         });
