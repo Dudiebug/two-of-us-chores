@@ -37,8 +37,12 @@ public class ChoresNotificationWorker extends Worker {
     static void saveConfiguration(Context c, String token, long cursor) {
         synchronized (LOCK) { prefs(c).edit().putString("token", token).putLong("cursor", cursor).remove("deliveredIds").remove("lastError").commit(); }
     }
-    static void saveFirebaseToken(Context c, String token) {
+    static void stageFirebaseToken(Context c, String token) {
+        if (token == null || token.isEmpty()) return;
         synchronized (LOCK) { prefs(c).edit().putString("pendingFcmToken", token).commit(); }
+    }
+    static void saveFirebaseToken(Context c, String token) {
+        stageFirebaseToken(c, token);
         if (isConfigured(c)) scheduleImmediate(c);
     }
     static void scheduleImmediate(Context c) {
