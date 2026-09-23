@@ -1,0 +1,137 @@
+name: Sign and Publish Chores 1.3.1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - releases/start-sign-1.3.1.json
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: chores-v131-sign-publish
+  cancel-in-progress: false
+
+jobs:
+  sign-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create one-run transfer key
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/chores131"
+          mkdir -p "$WORK"
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072             -out "$WORK/transfer-private.pem" >/dev/null 2>&1
+          openssl pkey -in "$WORK/transfer-private.pem" -pubout             -out releases/chores-1.3.1-transfer-public.pem
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add releases/chores-1.3.1-transfer-public.pem
+          git commit -m "Publish one-run Chores 1.3.1 transfer key"
+          git push origin HEAD:main
+
+      - name: Wait for encrypted signing bundle
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/chores131"
+          mkdir -p "$WORK/transfer" "$WORK/keystore"
+          found=0
+          for attempt in $(seq 1 180); do
+            git fetch -q origin main
+            if git show origin/main:releases/chores-1.3.1-signing-transfer.b64               > "$WORK/signing-transfer.b64" 2>/dev/null; then
+              found=1
+              break
+            fi
+            sleep 5
+          done
+          test "$found" -eq 1
+          base64 -d "$WORK/signing-transfer.b64" > "$WORK/signing-transfer.tar.gz"
+          tar -xzf "$WORK/signing-transfer.tar.gz" -C "$WORK/transfer"
+          openssl pkeyutl -decrypt             -inkey "$WORK/transfer-private.pem"             -pkeyopt rsa_padding_mode:oaep             -pkeyopt rsa_oaep_md:sha256             -in "$WORK/transfer/transfer-secret.enc"             -out "$WORK/transfer/transfer.secret"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000             -in "$WORK/transfer/signing-bundle.enc"             -out "$WORK/signing-bundle.tar.gz"             -pass file:"$WORK/transfer/transfer.secret"
+          tar -xzf "$WORK/signing-bundle.tar.gz" -C "$WORK/keystore"
+          test -s "$WORK/keystore/chores-signing.p12"
+          test -s "$WORK/keystore/storepass.txt"
+
+      - name: Download verified Chores 1.3.1 build
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/chores131"
+          RUN=$(jq -r .build_run releases/start-sign-1.3.1.json)
+          SOURCE=$(jq -r .source_commit releases/start-sign-1.3.1.json)
+          [[ "$RUN" =~ ^[0-9]+$ ]]
+          [[ "$SOURCE" =~ ^[a-f0-9]{40}$ ]]
+          test "$(gh run view "$RUN" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)" = success
+          test "$(gh run view "$RUN" --repo "$GITHUB_REPOSITORY" --json headSha --jq .headSha)" = "$SOURCE"
+          gh run download "$RUN" --repo "$GITHUB_REPOSITORY"             --name chores-1.3.1-unsigned --dir "$WORK/unsigned"
+          test -s "$WORK/unsigned/chores-1.3.1-unsigned.apk"
+          test "$(tr -d '\r\n' < "$WORK/unsigned/SOURCE_COMMIT.txt")" = "$SOURCE"
+
+      - name: Sign and verify Chores 1.3.1
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/chores131"
+          KS="$WORK/keystore/chores-signing.p12"
+          PASSFILE="$WORK/keystore/storepass.txt"
+          KEYPASSFILE="$WORK/keystore/keypass.txt"
+          cp "$PASSFILE" "$KEYPASSFILE"
+          EXPECTED_CERT=$(jq -r .certificate_sha256 releases/start-sign-1.3.1.json)
+          BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          mkdir -p release
+          "$BT/apksigner" sign             --ks "$KS" --ks-key-alias chores             --ks-pass "file:$PASSFILE" --key-pass "file:$KEYPASSFILE"             --v2-signing-enabled true --v3-signing-enabled true             --out release/chores-1.3.1.apk             "$WORK/unsigned/chores-1.3.1-unsigned.apk"
+          "$BT/apksigner" verify --verbose --print-certs             release/chores-1.3.1.apk > release/VERIFICATION.txt
+          tr '[:upper:]' '[:lower:]' < release/VERIFICATION.txt | grep -q "$EXPECTED_CERT"
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' release/VERIFICATION.txt
+          grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' release/VERIFICATION.txt
+          "$BT/aapt" dump badging release/chores-1.3.1.apk > release/package.txt
+          grep -q "name='net.dudiebug.chores'" release/package.txt
+          grep -q "versionCode='12'" release/package.txt
+          grep -q "versionName='1.3.1'" release/package.txt
+          grep -q "application-label:'Chores'" release/package.txt
+          "$BT/aapt" dump xmltree release/chores-1.3.1.apk AndroidManifest.xml > release/manifest.txt
+          grep -q 'net.dudiebug.chores.ChoresFirebaseMessagingService' release/manifest.txt
+          sha256sum release/chores-1.3.1.apk > release/SHA256SUMS.txt
+          jq -n             --arg source "$(jq -r .source_commit releases/start-sign-1.3.1.json)"             --arg certificate "$EXPECTED_CERT"             --arg apk_sha256 "$(awk '{print $1}' release/SHA256SUMS.txt)"             '{source_commit:$source,certificate_sha256:$certificate,apk_sha256:$apk_sha256,version:"1.3.1",version_code:12}'             > release/build-metadata.json
+
+      - name: Preserve signed release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: chores-1.3.1-signed-release
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish Chores 1.3.1
+        run: |
+          set -euo pipefail
+          SOURCE=$(jq -r .source_commit releases/start-sign-1.3.1.json)
+          git merge-base --is-ancestor "$SOURCE" HEAD
+          git diff --exit-code "$SOURCE" HEAD --             android/native android/build-1.3.1.sh android/capacitor test
+          if gh release view v1.3.1 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Refusing to overwrite an existing v1.3.1 release.' >&2
+            exit 1
+          fi
+          gh release create v1.3.1             --repo "$GITHUB_REPOSITORY"             --target "$SOURCE"             --title 'Chores 1.3.1'             --notes-file releases/notes-1.3.1.md             release/chores-1.3.1.apk             release/SHA256SUMS.txt             release/VERIFICATION.txt             release/package.txt             release/manifest.txt             release/build-metadata.json
+
+      - name: Remove one-run signing material
+        if: always()
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git checkout -B cleanup origin/main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f --ignore-unmatch             .github/workflows/publish-chores-1.3.1.yml             releases/start-sign-1.3.1.json             releases/chores-1.3.1-transfer-public.pem             releases/chores-1.3.1-signing-transfer.b64
+          if ! git diff --cached --quiet; then
+            git commit -m "Remove one-run Chores 1.3.1 signing material"
+            git push origin HEAD:main
+          fi
+          rm -rf "$RUNNER_TEMP/chores131"
