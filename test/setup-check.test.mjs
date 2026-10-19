@@ -12,7 +12,7 @@ async function listen(t, server) {
 }
 
 test("setup check exercises the real login origin gate without credentials or sessions", async (t) => {
-  const db = await openDatabase(":memory:", { D: "dylan-test-password", M: "mady-test-password" });
+  const db = await openDatabase(":memory:", { D: "alpha-test-password", M: "bravo-test-password" });
   const app = await createApp({ db, env: { APP_ORIGIN: "https://chores.example.com" }, push: { configured: false, send: async () => false } });
   const upstream = await listen(t, app.server);
   assert.equal((await checkEndpoint(upstream, "https://chores.example.com")).ok, true);
@@ -22,13 +22,13 @@ test("setup check exercises the real login origin gate without credentials or se
   assert.match(bad.message, /https:\/\/chores.example.com/);
   assert.equal(db.prepare("SELECT count(*) AS n FROM sessions").get().n, 0);
   for (let i = 0; i < 10; i++) assert.equal((await checkEndpoint(upstream, "https://chores.example.com")).ok, true);
-  const login = await fetch(`${upstream}/api/session`, { method: "POST", headers: { Origin: "https://chores.example.com", "Content-Type": "application/json" }, body: JSON.stringify({ userId: "D", password: "dylan-test-password" }) });
+  const login = await fetch(`${upstream}/api/session`, { method: "POST", headers: { Origin: "https://chores.example.com", "Content-Type": "application/json" }, body: JSON.stringify({ userId: "D", password: "alpha-test-password" }) });
   assert.equal(login.status, 200);
   assert.match(login.headers.get("set-cookie"), /Secure/);
 });
 
 test("setup check rejects missing/rewritten Origin through a real HTTP proxy", async (t) => {
-  const db = await openDatabase(":memory:", { D: "dylan-test-password", M: "mady-test-password" });
+  const db = await openDatabase(":memory:", { D: "alpha-test-password", M: "bravo-test-password" });
   const app = await createApp({ db, env: { APP_ORIGIN: "https://chores.example.com" }, push: { configured: false, send: async () => false } });
   const upstream = await listen(t, app.server);
   let preserve = true;

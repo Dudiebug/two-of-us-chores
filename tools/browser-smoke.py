@@ -9,7 +9,7 @@ try:
   b=w.chromium.launch(executable_path=shutil.which('chromium') or None,headless=True,args=['--no-sandbox'])
   page=b.new_page(viewport={'width':412,'height':915},device_scale_factor=1)
   errors=[]; page.on('pageerror',lambda e: errors.append(str(e)))
-  page.goto('http://localhost:3099/login'); page.locator('#loginUser').fill('dylan'); page.locator('#loginPassword').fill('dylan-test-password'); page.locator('#loginForm button[type=submit]').click()
+  page.goto('http://localhost:3099/login'); page.locator('#loginUser').fill('alpha'); page.locator('#loginPassword').fill('alpha-test-password'); page.locator('#loginForm button[type=submit]').click()
   page.wait_for_url('**/app**'); page.locator('#adminButton').wait_for(state='visible')
   page.locator('#addChoreButton').click(); page.locator('#choreTitle').fill('Check rendered UI'); page.locator('#choreAssignee').select_option('M'); page.locator('#saveChoreButton').click()
   page.locator('#choreDialog').wait_for(state='hidden')

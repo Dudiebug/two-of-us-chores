@@ -4,7 +4,7 @@ import { openDatabase } from "../src/db.mjs";
 import { createApp } from "../src/server.mjs";
 
 const ORIGIN = "http://localhost:3000";
-const PASSWORDS = { DYLAN_PASSWORD: "dylan-test-password", MADY_PASSWORD: "mady-test-password" };
+const PASSWORDS = { ALPHA_PASSWORD: "alpha-test-password", BRAVO_PASSWORD: "bravo-test-password" };
 
 test("a normal user can change their own predefined color in Settings", async (t) => {
   const db = await openDatabase(":memory:", PASSWORDS);
@@ -17,12 +17,12 @@ test("a normal user can change their own predefined color in Settings", async (t
   t.after(() => new Promise((resolve) => app.server.close(resolve)));
   const base = `http://127.0.0.1:${app.server.address().port}`;
 
-  assert.equal(db.prepare("SELECT is_admin FROM users WHERE id='M'").get().is_admin, 0, "Mady must be a non-admin for this test");
+  assert.equal(db.prepare("SELECT is_admin FROM users WHERE id='M'").get().is_admin, 0, "Bravo must be a non-admin for this test");
 
   const login = await fetch(base + "/api/session", {
     method: "POST",
     headers: { Origin: ORIGIN, "Content-Type": "application/json" },
-    body: JSON.stringify({ username: "mady", password: PASSWORDS.MADY_PASSWORD }),
+    body: JSON.stringify({ username: "bravo", password: PASSWORDS.BRAVO_PASSWORD }),
   });
   assert.equal(login.status, 200);
   const cookie = login.headers.get("set-cookie")?.split(";", 1)[0];

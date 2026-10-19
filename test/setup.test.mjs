@@ -11,7 +11,7 @@ import { passwordMatches } from "../src/security.mjs";
 import { writeConfig, validateConfig } from "../deploy/configure.mjs";
 
 const helper = new URL("../deploy/create-lxc-config.sh", import.meta.url).pathname;
-const answers = "https://chores.example.com/\n127.0.0.1\nAmerica/Los_Angeles\n3000\ny\npush@example.com\ndylan-test-password\ndylan-test-password\nmady-test-password\nmady-test-password\n";
+const answers = "https://chores.example.com/\n127.0.0.1\nAmerica/Los_Angeles\n3000\ny\npush@example.com\nalpha-test-password\nalpha-test-password\nbravo-test-password\nbravo-test-password\n";
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), "chores-setup-"));
@@ -36,7 +36,7 @@ test("guided config normalizes browser URL, generates keys and writes privately"
   assert.equal(Buffer.from(env.VAPID_PRIVATE_KEY, "base64url").length, 32);
   assert.equal((await stat(config)).mode & 0o777, 0o600);
   assert.ok(!result.stdout.includes(env.VAPID_PRIVATE_KEY));
-  assert.ok(!result.stdout.includes(env.DYLAN_PASSWORD));
+  assert.ok(!result.stdout.includes(env.ALPHA_PASSWORD));
 });
 
 test("rerun changes origin while preserving passwords, push keys and custom paths", async (t) => {
@@ -78,12 +78,12 @@ test("push can be disabled without deleting an existing key pair", async (t) => 
 test("existing database is retained without asking for or resetting account passwords", async (t) => {
   const { config, directory, run } = await fixture(t);
   const database = join(directory, "data", "chores.db");
-  const db = await openDatabase(database, { D: "existing-dylan-password", M: "existing-mady-password" });
+  const db = await openDatabase(database, { D: "existing-alpha-password", M: "existing-bravo-password" });
   const before = db.prepare("SELECT id,password_hash FROM users ORDER BY id").all();
   const result = run("https://chores.example.com\n127.0.0.1\nUTC\n3000\nno\n");
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(db.prepare("SELECT id,password_hash FROM users ORDER BY id").all(), before);
-  assert.equal(parseEnv(await readFile(config, "utf8")).DYLAN_PASSWORD, undefined);
+  assert.equal(parseEnv(await readFile(config, "utf8")).ALPHA_PASSWORD, undefined);
   db.close();
 });
 
@@ -91,9 +91,9 @@ test("shell-like password text stays literal and config symlinks are refused", a
   const { directory, config, run } = await fixture(t);
   const marker = join(directory, "must-not-exist");
   const password = `literal-$(touch ${marker})-password`;
-  const result = run(answers.replaceAll("dylan-test-password", password));
+  const result = run(answers.replaceAll("alpha-test-password", password));
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(parseEnv(await readFile(config, "utf8")).DYLAN_PASSWORD, undefined);
+  assert.equal(parseEnv(await readFile(config, "utf8")).ALPHA_PASSWORD, undefined);
   const db = await openDatabase(":memory:");
   await bootstrapAccounts(db, { admin: { username: "customadmin", password } });
   const user = db.prepare("SELECT * FROM users WHERE username='customadmin'").get();
@@ -106,7 +106,7 @@ test("shell-like password text stays literal and config symlinks are refused", a
   const brokenLink = join(directory, "broken-link.env");
   await symlink(join(directory, "missing.env"), brokenLink);
   assert.throws(() => writeConfig(brokenLink, { APP_ORIGIN: "https://other.example.com" }), /regular file/);
-  assert.equal(parseEnv(await readFile(config, "utf8")).DYLAN_PASSWORD, undefined);
+  assert.equal(parseEnv(await readFile(config, "utf8")).ALPHA_PASSWORD, undefined);
 });
 
 test("invalid ports, origins, data paths and mismatched push keys cannot replace config", async (t) => {

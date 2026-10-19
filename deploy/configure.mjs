@@ -83,7 +83,7 @@ async function main() {
       current.HOUSEHOLD_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone,
       current.PORT || "3000", current.VAPID_SUBJECT ? "yes" : "no",
       current.VAPID_SUBJECT?.replace(/^mailto:/, "") || "",
-      existsSync(database) || (current.DYLAN_PASSWORD && current.MADY_PASSWORD) ? "keep" : "new",
+      existsSync(database) || (current.ALPHA_PASSWORD && current.BRAVO_PASSWORD) ? "keep" : "new",
     ].join("\n"));
   } else if (command === "save") {
     const choices = process.env;
@@ -102,8 +102,8 @@ async function main() {
       next.VAPID_PUBLIC_KEY = keys.publicKey;
       next.VAPID_PRIVATE_KEY = keys.privateKey;
     }
-    if (choices.SETUP_DYLAN_PASSWORD) next.DYLAN_PASSWORD = choices.SETUP_DYLAN_PASSWORD;
-    if (choices.SETUP_MADY_PASSWORD) next.MADY_PASSWORD = choices.SETUP_MADY_PASSWORD;
+    if (choices.SETUP_ALPHA_PASSWORD) next.ALPHA_PASSWORD = choices.SETUP_ALPHA_PASSWORD;
+    if (choices.SETUP_BRAVO_PASSWORD) next.BRAVO_PASSWORD = choices.SETUP_BRAVO_PASSWORD;
     validateConfig(next);
     writeConfig(path, next);
     console.log(`Saved ${path}. Existing accounts and push keys are preserved.`);

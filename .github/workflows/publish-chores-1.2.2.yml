@@ -80,7 +80,7 @@ jobs:
           - Fixed palette: Teal, Rose, Blue, Violet, Amber, and Green.
           - Chore/history ownership, person filters, calendar indicators, and admin membership swatches use the assigned color.
           - Each palette entry has light, dark, and Pink-theme variants; arbitrary hex colors are intentionally rejected so contrast stays predictable.
-          - Existing users default to Teal; legacy Mady migrates to Rose to preserve the previous visual distinction.
+          - Existing users default to Teal; the second legacy account migrates to Rose to preserve the previous visual distinction.
           - Includes the dedicated adaptive/monochrome Chores launcher resources from 1.2.1.
 
           This update changes the server database/API/UI, so update the LXC first:

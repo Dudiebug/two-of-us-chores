@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { openDatabase } from "../src/db.mjs";
 import { createFcm, createFcmSender, validFcmToken } from "../src/fcm.mjs";
 
-const PASSWORDS = { DYLAN_PASSWORD: "dylan-test-password", MADY_PASSWORD: "mady-test-password" };
+const PASSWORDS = { ALPHA_PASSWORD: "alpha-test-password", BRAVO_PASSWORD: "bravo-test-password" };
 const TOKEN = "fcm-token:abcdefghijklmnopqrstuvwxyz0123456789";
 
 async function fixture(t) {

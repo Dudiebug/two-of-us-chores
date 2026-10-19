@@ -77,13 +77,13 @@ jobs:
 
           Configurable accounts, admin-managed private groups, a checklist icon, and native Android notification repair.
 
-          Fresh setup defines an administrator username/password and optional users and groups. Existing Dylan/Mady accounts and passwords are preserved in Home; Dylan becomes the initial administrator. Admin can create/disable users, reset passwords, create/archive groups and manage membership. Group membership is enforced on the server for chore/history access, live updates and queued native notifications.
+          Fresh setup defines an administrator username/password and optional users and groups. Existing legacy accounts and passwords are preserved in Home; the first legacy account becomes the initial administrator. Admin can create/disable users, reset passwords, create/archive groups and manage membership. Group membership is enforced on the server for chore/history access, live updates and queued native notifications.
 
           Android loads its bundled bridge through an explicit same-origin script while preserving the site's strict CSP. Notification readiness, permission requests, Android settings and actual notification posting results are handled by Chores, not Chrome.
 
           Verification: 61 Node 24 tests passed; browser smoke passed; 2 Android API 35 instrumentation tests passed, including the actual notification permission dialog, granting permission and posting a notification from Chores. APK v2/v3 signatures use the original release certificate. These checks do not replace confirmation on your phone or LXC. The attached build metadata identifies the tested source; the release tag adds publishing metadata only.
 
-          Update the LXC first: `cd /opt/two-of-us-chores && bash install.sh --update`. Then install `chores-1.2.0.apk` over the previous APK. Package ID remains `net.dudiebug.chores`, version code 4. Sign in as `dylan` or `mady` with your existing password. Fresh installations choose their own usernames.
+          Update the LXC first: `cd /opt/two-of-us-chores && bash install.sh --update`. Then install `chores-1.2.0.apk` over the previous APK. Package ID remains `net.dudiebug.chores`, version code 4. Sign in with your lowercase legacy display name and existing password. Fresh installations choose their own usernames.
 
           Background native notifications still use WorkManager polling (15-minute minimum; Android can delay them longer), not realtime FCM. Browser Web Push subscriptions remain independent. See `docs/RELEASE_1.2.md` for migration and privacy details.
           EOF

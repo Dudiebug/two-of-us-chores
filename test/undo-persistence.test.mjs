@@ -7,7 +7,7 @@ import { openDatabase, publicState } from "../src/db.mjs";
 import { createApp } from "../src/server.mjs";
 import { createBackup } from "../src/backup.mjs";
 
-const passwords = { D: "dylan-test-password", M: "mady-test-password" };
+const passwords = { D: "alpha-test-password", M: "bravo-test-password" };
 const insertChore = (db) => db.prepare(`INSERT INTO chores
   (title,assignee_id,schedule_kind,schedule_interval,next_due,anchor_date,created_at,updated_at)
   VALUES ('Bins','D','once',1,'2099-01-01','2099-01-01','2026-09-12','2026-09-12')`).run();

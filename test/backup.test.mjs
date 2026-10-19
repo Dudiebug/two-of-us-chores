@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { openDatabase } from "../src/db.mjs";
 import { createBackup } from "../src/backup.mjs";
 
-const PASSWORDS = { DYLAN_PASSWORD: "dylan-test-password", MADY_PASSWORD: "mady-test-password" };
+const PASSWORDS = { ALPHA_PASSWORD: "alpha-test-password", BRAVO_PASSWORD: "bravo-test-password" };
 
 test("backup creates a restorable, integrity-checked database", async () => {
   const directory = await mkdtemp(join(tmpdir(), "chores-backup-"));

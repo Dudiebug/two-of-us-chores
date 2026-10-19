@@ -4,7 +4,7 @@ import { createECDH } from "node:crypto";
 import { createPush } from "../src/push.mjs";
 import { openDatabase } from "../src/db.mjs";
 
-const PASSWORDS = { DYLAN_PASSWORD: "dylan-test-password", MADY_PASSWORD: "mady-test-password" };
+const PASSWORDS = { ALPHA_PASSWORD: "alpha-test-password", BRAVO_PASSWORD: "bravo-test-password" };
 
 function vapidEnv() {
   const key = createECDH("prime256v1");

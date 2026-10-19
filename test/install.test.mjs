@@ -97,7 +97,7 @@ test("private recovery bundle contains restorable data, config and previous revi
   db.exec("CREATE TABLE sample (value TEXT); INSERT INTO sample VALUES ('keep this chore')");
   db.close();
   const config = join(directory, "app.env");
-  const configText = `DATABASE_PATH='${database}'\nBACKUP_DIR='${directory}/backups'\nDYLAN_PASSWORD='private-test-password'\n`;
+  const configText = `DATABASE_PATH='${database}'\nBACKUP_DIR='${directory}/backups'\nALPHA_PASSWORD='private-test-password'\n`;
   await writeFile(config, configText, { mode: 0o600 });
   const result = spawnSync(process.execPath, [join(root, "deploy/maintenance.mjs"), "backup", config, "a".repeat(40), "required"], { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);

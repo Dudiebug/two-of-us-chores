@@ -1,11 +1,11 @@
 > **Chores 1.2:** configurable username/password accounts, administrator-managed private groups,
 > and native Android notifications. See [the upgrade/setup guide](docs/RELEASE_1.2.md).
-> New installations use the terminal account wizard, not preconfigured Dylan/Mady accounts.
+> New installations use the terminal account wizard, not preconfigured legacy accounts.
 > The original two-account instructions below are retained as legacy deployment reference.
 
 # Two of Us Chores
 
-Two-user chore app for Dylan and Mady. It is one Node 24 process backed by SQLite, with server-sent events for live refresh and optional Web Push notifications.
+Two-user household chore app. It is one Node 24 process backed by SQLite, with server-sent events for live refresh and optional Web Push notifications.
 
 **Deploy on Proxmox:** in a Debian 13 LXC, run as root:
 
@@ -30,14 +30,14 @@ configuration and returns a nonzero exit status.
 
 ## How to use
 
-1. Open your HTTPS app URL, choose Dylan or Mady, and enter that person's password.
+1. Open your HTTPS app URL, choose your account, and enter your password.
 2. On **Today**, use **+** to add a chore. Choose its owner, due date, repeat schedule,
    and reminder. Tap the arrow on a chore to edit it; removal is inside the edit form.
 3. Tick its square checkbox when finished. A one-time chore leaves the active list;
    a repeating chore advances to its next due date. **Undo** is available in the
    completion message and eligible History entries.
 4. In **Calendar**, select a date, move between weeks, jump to a month, or return to
-   Today. **Show more days** extends the agenda. Everyone/Dylan/Mady filters work
+   Today. **Show more days** extends the agenda. Everyone/per-person filters work
    across views. Future projected repeats are previews, not independently completable chores.
 5. **History** shows who completed each chore and when. An Undo button disappears
    when the chore has changed since that completion.
@@ -142,7 +142,7 @@ The Compose resource settings are one CPU and a 256 MB memory ceiling. They are 
 | `APP_ORIGIN` | Exact browser origin; HTTPS is required outside explicit localhost development. |
 | `BIND_ADDRESS` | `127.0.0.1` for a same-host proxy; the LXC's private IP for a separate proxy guest. |
 | `LISTEN_HOST` | Node listening interface: defaults to `0.0.0.0` for Docker compatibility; use the LXC private IP for a separate proxy, or `127.0.0.1` for same-host access. `BIND_ADDRESS` only controls Docker's published port. |
-| `DYLAN_PASSWORD`, `MADY_PASSWORD` | First-run credentials only; changing `.env` later does not overwrite existing hashes. |
+| `ALPHA_PASSWORD`, `BRAVO_PASSWORD` | First-run credentials only; changing `.env` later does not overwrite existing hashes. |
 | `HOUSEHOLD_TIMEZONE` | IANA timezone used for dates and notification times; defaults to `America/Los_Angeles`. |
 | `DATA_DIR`, `DATABASE_PATH` | Persistent SQLite location; Docker defaults to `/data/chores.db`. |
 | `BACKUP_DIR` | Default backup directory; Docker defaults to `/data/backups`. |

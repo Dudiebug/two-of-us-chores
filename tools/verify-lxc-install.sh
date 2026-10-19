@@ -43,10 +43,10 @@ America/Los_Angeles
 3000
 yes
 test@example.com
-dylan-smoke-test-password
-dylan-smoke-test-password
-mady-smoke-test-password
-mady-smoke-test-password
+alpha-smoke-test-password
+alpha-smoke-test-password
+bravo-smoke-test-password
+bravo-smoke-test-password
 ANSWERS
 status=$?
 set -e
@@ -60,7 +60,7 @@ podman exec "$container" node --input-type=module -e '
   import assert from "node:assert/strict";
   import { writeFileSync } from "node:fs";
   const base = "http://127.0.0.1:3000";
-  const login = await fetch(base + "/api/session", { method: "POST", headers: { Origin: "https://chores.invalid", "Content-Type": "application/json" }, body: JSON.stringify({ userId: "D", password: "dylan-smoke-test-password" }) });
+  const login = await fetch(base + "/api/session", { method: "POST", headers: { Origin: "https://chores.invalid", "Content-Type": "application/json" }, body: JSON.stringify({ userId: "D", password: "alpha-smoke-test-password" }) });
   assert.equal(login.status, 200);
   assert.match(login.headers.get("set-cookie"), /Secure/);
   const cookie = login.headers.get("set-cookie").split(";")[0];
