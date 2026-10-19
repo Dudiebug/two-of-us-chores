@@ -20,8 +20,8 @@ before(async () => {
       APP_ORIGIN: origin,
       ALLOW_INSECURE_LOCALHOST: "true",
       DATABASE_PATH: join(dataDir, "chores.db"),
-      DYLAN_PASSWORD: "dylan-integration-password",
-      MADY_PASSWORD: "mady-integration-password",
+      ALPHA_PASSWORD: "alpha-integration-password",
+      BRAVO_PASSWORD: "bravo-integration-password",
       HOUSEHOLD_TIMEZONE: "America/Chicago",
     },
     push: { configured: false, publicKey: null, async send() { return false; } },
@@ -48,46 +48,46 @@ test("two authenticated sessions synchronize and enforce mutation safety", async
   const unauthorized = await api("/api/state");
   assert.equal(unauthorized.status, 401);
 
-  const dylanLogin = await api("/api/session", {
+  const alphaLogin = await api("/api/session", {
     method: "POST",
-    body: { userId: "D", password: "dylan-integration-password" },
+    body: { userId: "D", password: "alpha-integration-password" },
   });
-  const madyLogin = await api("/api/session", {
+  const bravoLogin = await api("/api/session", {
     method: "POST",
-    body: { userId: "M", password: "mady-integration-password" },
+    body: { userId: "M", password: "bravo-integration-password" },
   });
-  assert.equal(dylanLogin.status, 200);
-  assert.equal(madyLogin.status, 200);
-  assert.match(dylanLogin.setCookie, /HttpOnly/);
-  assert.match(dylanLogin.setCookie, /SameSite=Strict/);
-  assert.doesNotMatch(dylanLogin.setCookie, /Secure/);
-  const dylanCookie = dylanLogin.setCookie.split(";", 1)[0];
-  const madyCookie = madyLogin.setCookie.split(";", 1)[0];
+  assert.equal(alphaLogin.status, 200);
+  assert.equal(bravoLogin.status, 200);
+  assert.match(alphaLogin.setCookie, /HttpOnly/);
+  assert.match(alphaLogin.setCookie, /SameSite=Strict/);
+  assert.doesNotMatch(alphaLogin.setCookie, /Secure/);
+  const alphaCookie = alphaLogin.setCookie.split(";", 1)[0];
+  const bravoCookie = bravoLogin.setCookie.split(";", 1)[0];
 
   const invalid = await api("/api/chores", {
     method: "POST",
-    cookie: dylanCookie,
+    cookie: alphaCookie,
     body: { title: "", assigneeId: "D", scheduleKind: "once", nextDue: "2099-01-01" },
   });
   assert.equal(invalid.status, 400);
   const crossOrigin = await api("/api/chores", {
     method: "POST",
-    cookie: dylanCookie,
+    cookie: alphaCookie,
     originHeader: "https://evil.example",
     body: choreInput("Cross-origin", "once"),
   });
   assert.equal(crossOrigin.status, 403);
 
-  events = await openEvents(dylanCookie);
+  events = await openEvents(alphaCookie);
   const created = await api("/api/chores", {
     method: "POST",
-    cookie: dylanCookie,
+    cookie: alphaCookie,
     body: choreInput("Laundry", "daily"),
   });
   assert.equal(created.status, 201);
   await events.nextChange();
 
-  let state = await api("/api/state", { cookie: madyCookie });
+  let state = await api("/api/state", { cookie: bravoCookie });
   assert.equal(state.status, 200);
   assert.equal(state.body.chores[0].title, "Laundry");
   const id = created.body.id;
@@ -95,24 +95,24 @@ test("two authenticated sessions synchronize and enforce mutation safety", async
 
   const edited = await api(`/api/chores/${id}`, {
     method: "PATCH",
-    cookie: madyCookie,
+    cookie: bravoCookie,
     body: choreInput("Laundry edited", "daily", "M"),
   });
   assert.equal(edited.status, 204);
   await events.nextChange();
 
-  state = await api("/api/state", { cookie: dylanCookie });
+  state = await api("/api/state", { cookie: alphaCookie });
   const editedChore = state.body.chores.find((chore) => chore.id === id);
   assert.equal(editedChore.title, "Laundry edited");
   assert.equal(editedChore.assigneeId, "M");
 
   const completionRevision = editedChore.revision;
   const completions = await Promise.all([
-    api(`/api/chores/${id}/complete`, { method: "POST", cookie: dylanCookie, body: { revision: completionRevision } }),
-    api(`/api/chores/${id}/complete`, { method: "POST", cookie: madyCookie, body: { revision: completionRevision } }),
+    api(`/api/chores/${id}/complete`, { method: "POST", cookie: alphaCookie, body: { revision: completionRevision } }),
+    api(`/api/chores/${id}/complete`, { method: "POST", cookie: bravoCookie, body: { revision: completionRevision } }),
   ]);
   assert.deepEqual(completions.map(({ status }) => status).sort(), [200, 409]);
-  state = await api("/api/state", { cookie: dylanCookie });
+  state = await api("/api/state", { cookie: alphaCookie });
   const completed = state.body.chores.find((chore) => chore.id === id);
   assert.equal(completed.nextDue, "2099-01-02");
   assert.equal(completed.revision, completionRevision + 1);
@@ -130,22 +130,22 @@ test("two authenticated sessions synchronize and enforce mutation safety", async
 
   const oneTime = await api("/api/chores", {
     method: "POST",
-    cookie: dylanCookie,
+    cookie: alphaCookie,
     body: choreInput("One time", "once"),
   });
   assert.equal(oneTime.status, 201);
   await events.nextChange();
-  const oneTimeState = await api("/api/state", { cookie: madyCookie });
+  const oneTimeState = await api("/api/state", { cookie: bravoCookie });
   const oneTimeChore = oneTimeState.body.chores.find(({ id }) => id === oneTime.body.id);
   const oneTimeComplete = await api(`/api/chores/${oneTime.body.id}/complete`, {
     method: "POST",
-    cookie: madyCookie,
+    cookie: bravoCookie,
     body: { revision: oneTimeChore.revision },
   });
   assert.equal(oneTimeComplete.status, 200);
   assert.deepEqual(oneTimeComplete.body, { removed: true, completionId: 2 });
   await events.nextChange();
-  const afterOneTime = await api("/api/state", { cookie: madyCookie });
+  const afterOneTime = await api("/api/state", { cookie: bravoCookie });
   assert.equal(afterOneTime.body.chores.some(({ id }) => id === oneTime.body.id), false);
   assert.equal(afterOneTime.body.history.length, 2);
   assert.deepEqual(afterOneTime.body.history[0], {
@@ -162,17 +162,17 @@ test("two authenticated sessions synchronize and enforce mutation safety", async
   });
   assert.equal(afterOneTime.body.history[1].choreId, id);
 
-  assert.equal((await api(`/api/history/${oneTimeComplete.body.completionId}/undo`, { method: "POST", cookie: dylanCookie, body: {} })).status, 204);
+  assert.equal((await api(`/api/history/${oneTimeComplete.body.completionId}/undo`, { method: "POST", cookie: alphaCookie, body: {} })).status, 204);
   await events.nextChange();
-  const undone = await api("/api/state", { cookie: madyCookie });
+  const undone = await api("/api/state", { cookie: bravoCookie });
   assert.equal(undone.body.history.length, 1);
   assert.equal(undone.body.chores.some((chore) => chore.id === oneTime.body.id), true);
 
-  const removed = await api(`/api/chores/${id}`, { method: "DELETE", cookie: dylanCookie });
+  const removed = await api(`/api/chores/${id}`, { method: "DELETE", cookie: alphaCookie });
   assert.equal(removed.status, 204);
-  const loggedOut = await api("/api/session", { method: "DELETE", cookie: madyCookie });
+  const loggedOut = await api("/api/session", { method: "DELETE", cookie: bravoCookie });
   assert.equal(loggedOut.status, 204);
-  assert.equal((await api("/api/state", { cookie: madyCookie })).status, 401);
+  assert.equal((await api("/api/state", { cookie: bravoCookie })).status, 401);
   assert.equal(revision, 1);
 });
 

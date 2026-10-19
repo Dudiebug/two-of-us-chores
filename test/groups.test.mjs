@@ -5,7 +5,7 @@ import { createApp } from "../src/server.mjs";
 import { createScheduler } from "../src/scheduler.mjs";
 
 async function fixture(t) {
-  const db = await openDatabase(":memory:", { D: "Dylan-test-passphrase", M: "Mady-test-passphrase" });
+  const db = await openDatabase(":memory:", { D: "Alpha-test-passphrase", M: "Bravo-test-passphrase" });
   const sent = [];
   const app = await createApp({ db, env: { APP_ORIGIN: "http://localhost:3000", ALLOW_INSECURE_LOCALHOST: "true" }, push: { configured: true, publicKey: "test", send: async (...args) => { sent.push(args); return true; } } });
   await new Promise((r) => app.server.listen(0, "127.0.0.1", r));
@@ -18,8 +18,8 @@ async function fixture(t) {
     return res;
   }
   const login = async (as, username, password) => { const r = await request(as, "/api/session", "POST", { username, password }); assert.equal(r.status, 200, await r.text()); };
-  await login("d", "DYLAN", "Dylan-test-passphrase");
-  await login("m", "mady", "Mady-test-passphrase");
+  await login("d", "ALPHA", "Alpha-test-passphrase");
+  await login("m", "bravo", "Bravo-test-passphrase");
   const create = async (path, data) => { const r = await request("d", path, "POST", data); const b = await r.json(); assert.equal(r.status, 200, JSON.stringify(b)); return b.id; };
   const e = await create("/api/admin/users", { username: "elijah", name: "Elijah", password: "Elijah-test-passphrase" });
   const a = await create("/api/admin/users", { username: "aryona", name: "Aryona", password: "Aryona-test-passphrase" });
@@ -79,7 +79,7 @@ test("membership removal and archival immediately revoke reads, SSE and queued n
   const controller = new AbortController(); t.after(() => controller.abort());
   const stream = await fetch(f.origin + `/api/events?groupId=${f.group}`, { headers: { Cookie: f.cookies.d }, signal: controller.signal });
   const reader = stream.body.getReader(); await reader.read();
-  const device = await (await f.request("d", "/api/native-device", "POST", { deviceId: "dylan-native-phone" })).json();
+  const device = await (await f.request("d", "/api/native-device", "POST", { deviceId: "alpha-native-phone" })).json();
   await f.request("e", `/api/chores?groupId=${f.group}`, "POST", f.input(f.a));
   const queued = await (await f.request("none", "/api/native-notifications", "GET", undefined, { Authorization: `Bearer ${device.token}` })).json();
   assert.equal(queued.events.length, 1); assert.equal(queued.events[0].groupId, f.group);

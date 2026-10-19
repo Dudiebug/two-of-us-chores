@@ -13,7 +13,7 @@ for (const host of ["127.0.0.1", null]) {
     await writeFile(envFile, [
       "APP_ORIGIN=http://localhost:3000", "ALLOW_INSECURE_LOCALHOST=true", "PORT=0",
       `DATABASE_PATH=${join(directory, "chores.db")}`,
-      "DYLAN_PASSWORD=launch-test-password", "MADY_PASSWORD=another-test-password",
+      "ALPHA_PASSWORD=launch-test-password", "BRAVO_PASSWORD=another-test-password",
       ...(host ? [`LISTEN_HOST=${host}`] : []),
     ].join("\n"), { mode: 0o600 });
     const child = spawn(process.execPath, [`--env-file=${envFile}`, "src/server.mjs"], {

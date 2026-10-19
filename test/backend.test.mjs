@@ -4,7 +4,7 @@ import { openDatabase } from "../src/db.mjs";
 import { createApp } from "../src/server.mjs";
 import { rolloverMissed } from "../src/scheduler.mjs";
 
-const PASSWORDS = { DYLAN_PASSWORD: "dylan-test-password", MADY_PASSWORD: "mady-test-password" };
+const PASSWORDS = { ALPHA_PASSWORD: "alpha-test-password", BRAVO_PASSWORD: "bravo-test-password" };
 const PUSH_KEYS = {
   p256dh: Buffer.alloc(65, 1).toString("base64url"),
   auth: Buffer.alloc(16, 2).toString("base64url"),
@@ -15,7 +15,7 @@ async function undoFixture(t, kind = "daily", nextDue = "2024-06-01") {
   const app = await runningApp(t, () => new Date("2024-06-04T17:00:00.000Z"), {
     configured: true, publicKey: "test", send: async (...args) => { sent.push(args); return true; },
   });
-  const login = (userId) => app.request("/api/session", { method: "POST", body: JSON.stringify({ userId, password: PASSWORDS[userId === "D" ? "DYLAN_PASSWORD" : "MADY_PASSWORD"] }) });
+  const login = (userId) => app.request("/api/session", { method: "POST", body: JSON.stringify({ userId, password: PASSWORDS[userId === "D" ? "ALPHA_PASSWORD" : "BRAVO_PASSWORD"] }) });
   await login("D");
   const input = { title: "Undo laundry", assigneeId: "M", scheduleKind: kind, scheduleInterval: 1, nextDue, reminderMode: "override", reminderTime: "10:30" };
   const created = await app.request("/api/chores", { method: "POST", body: JSON.stringify(input) });
@@ -99,7 +99,7 @@ test("concurrent edit and Undo cannot overwrite each other", async (t) => {
 test("activity delivery failure does not turn a committed completion or Undo into an API failure", async (t) => {
   let failDelivery = false;
   const app = await runningApp(t, undefined, { configured: true, send: async () => { if (failDelivery) throw new Error("test push unavailable"); return true; } });
-  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "D", password: PASSWORDS.DYLAN_PASSWORD }) });
+  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "D", password: PASSWORDS.ALPHA_PASSWORD }) });
   const created = await app.request("/api/chores", { method: "POST", body: JSON.stringify({ title: "Bins", assigneeId: "D", scheduleKind: "once", nextDue: "2099-01-01" }) });
   const { id } = await created.json();
   failDelivery = true;
@@ -152,13 +152,13 @@ test("authentication enforces same-origin writes and protects state", async (t) 
   const crossOrigin = await fetch(`${app.url}/api/session`, {
     method: "POST",
     headers: { Origin: "https://attacker.example", "Content-Type": "application/json" },
-    body: JSON.stringify({ userId: "D", password: PASSWORDS.DYLAN_PASSWORD }),
+    body: JSON.stringify({ userId: "D", password: PASSWORDS.ALPHA_PASSWORD }),
   });
   assert.equal(crossOrigin.status, 403);
   assert.equal((await app.request("/api/state")).status, 401);
   const login = await app.request("/api/session", {
     method: "POST",
-    body: JSON.stringify({ userId: "D", password: PASSWORDS.DYLAN_PASSWORD }),
+    body: JSON.stringify({ userId: "D", password: PASSWORDS.ALPHA_PASSWORD }),
   });
   assert.equal(login.status, 200);
   assert.match(app.cookie.header, /HttpOnly/);
@@ -171,15 +171,15 @@ test("authentication enforces same-origin writes and protects state", async (t) 
 
   const changed = await app.request("/api/password", {
     method: "PATCH",
-    body: JSON.stringify({ currentPassword: PASSWORDS.DYLAN_PASSWORD, newPassword: "dylan-new-password" }),
+    body: JSON.stringify({ currentPassword: PASSWORDS.ALPHA_PASSWORD, newPassword: "alpha-new-password" }),
   });
   assert.equal(changed.status, 204);
   const oldLogin = await app.request("/api/session", {
-    method: "POST", body: JSON.stringify({ userId: "D", password: PASSWORDS.DYLAN_PASSWORD }),
+    method: "POST", body: JSON.stringify({ userId: "D", password: PASSWORDS.ALPHA_PASSWORD }),
   });
   assert.equal(oldLogin.status, 400);
   const newLogin = await app.request("/api/session", {
-    method: "POST", body: JSON.stringify({ userId: "D", password: "dylan-new-password" }),
+    method: "POST", body: JSON.stringify({ userId: "D", password: "alpha-new-password" }),
   });
   assert.equal(newLogin.status, 200);
 });
@@ -204,16 +204,16 @@ test("activity notifications reach only the other person who opted in", async (t
     publicKey: "test-key",
     async send(...message) { sent.push(message); return true; },
   });
-  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "D", password: PASSWORDS.DYLAN_PASSWORD }) });
+  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "D", password: PASSWORDS.ALPHA_PASSWORD }) });
   const created = await app.request("/api/chores", {
     method: "POST", body: JSON.stringify({ title: "Bins", assigneeId: "D", scheduleKind: "once", nextDue: "2099-01-01", reminderMode: "off" }),
   });
   assert.equal(created.status, 201);
-  assert.deepEqual(sent[0].slice(0, 3), ["M", "Chore added", "Dylan added Bins for Dylan."]);
+  assert.deepEqual(sent[0].slice(0, 3), ["M", "Chore added", "Alpha added Bins for Alpha."]);
 
-  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "M", password: PASSWORDS.MADY_PASSWORD }) });
+  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "M", password: PASSWORDS.BRAVO_PASSWORD }) });
   assert.equal((await app.request("/api/settings", { method: "PATCH", body: JSON.stringify({ activityNotifications: false }) })).status, 204);
-  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "D", password: PASSWORDS.DYLAN_PASSWORD }) });
+  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "D", password: PASSWORDS.ALPHA_PASSWORD }) });
   assert.equal((await app.request("/api/chores", {
     method: "POST", body: JSON.stringify({ title: "Laundry", assigneeId: "M", scheduleKind: "once", nextDue: "2099-01-01", reminderMode: "off" }),
   })).status, 201);
@@ -229,16 +229,16 @@ test("Android devices register FCM tokens, receive immediate events, and refresh
     configured: true,
     async send(...message) { sent.push(message); return true; },
   });
-  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "D", password: PASSWORDS.DYLAN_PASSWORD }) });
+  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "D", password: PASSWORDS.ALPHA_PASSWORD }) });
   const firstToken = "fcm-token:android-device-abcdefghijklmnopqrstuvwxyz";
   const registered = await app.request("/api/native-device", {
-    method: "POST", body: JSON.stringify({ deviceId: "dylan-android-phone", fcmToken: firstToken }),
+    method: "POST", body: JSON.stringify({ deviceId: "alpha-android-phone", fcmToken: firstToken }),
   });
   assert.equal(registered.status, 200);
   const device = await registered.json();
-  assert.equal(app.db.prepare("SELECT fcm_token FROM native_devices WHERE device_id='dylan-android-phone'").get().fcm_token, firstToken);
+  assert.equal(app.db.prepare("SELECT fcm_token FROM native_devices WHERE device_id='alpha-android-phone'").get().fcm_token, firstToken);
 
-  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "M", password: PASSWORDS.MADY_PASSWORD }) });
+  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "M", password: PASSWORDS.BRAVO_PASSWORD }) });
   const created = await app.request("/api/chores", {
     method: "POST", body: JSON.stringify({ title: "Instant bins", assigneeId: "D", scheduleKind: "once", nextDue: "2099-01-01", reminderMode: "off" }),
   });
@@ -259,7 +259,7 @@ test("Android devices register FCM tokens, receive immediate events, and refresh
     body: JSON.stringify({ fcmToken: nextToken }),
   });
   assert.equal(refreshed.status, 204, "bearer-authenticated native refresh does not depend on browser Origin");
-  assert.equal(app.db.prepare("SELECT fcm_token FROM native_devices WHERE device_id='dylan-android-phone'").get().fcm_token, nextToken);
+  assert.equal(app.db.prepare("SELECT fcm_token FROM native_devices WHERE device_id='alpha-android-phone'").get().fcm_token, nextToken);
   assert.equal((await fetch(`${app.url}/api/native-notifications/token`, {
     method: "PUT", headers: { Authorization: "Bearer invalid", "Content-Type": "application/json" }, body: JSON.stringify({ fcmToken: nextToken }),
   })).status, 401);
@@ -268,7 +268,7 @@ test("Android devices register FCM tokens, receive immediate events, and refresh
 test("API validates chore input and rejects stale atomic completion", async (t) => {
   const app = await runningApp(t, () => new Date("2024-06-04T17:00:00.000Z"));
   assert.equal((await app.request("/api/session", {
-    method: "POST", body: JSON.stringify({ userId: "M", password: PASSWORDS.MADY_PASSWORD }),
+    method: "POST", body: JSON.stringify({ userId: "M", password: PASSWORDS.BRAVO_PASSWORD }),
   })).status, 200);
   const invalid = await app.request("/api/chores", {
     method: "POST", body: JSON.stringify({ title: "", assigneeId: "D", scheduleKind: "daily", nextDue: "2024-01-01" }),
@@ -305,7 +305,7 @@ test("API validates chore input and rejects stale atomic completion", async (t) 
 test("one-time completion removes the active chore but retains its snapshot", async (t) => {
   const app = await runningApp(t, () => new Date("2024-06-04T17:00:00.000Z"));
   assert.equal((await app.request("/api/session", {
-    method: "POST", body: JSON.stringify({ userId: "M", password: PASSWORDS.MADY_PASSWORD }),
+    method: "POST", body: JSON.stringify({ userId: "M", password: PASSWORDS.BRAVO_PASSWORD }),
   })).status, 200);
   const created = await app.request("/api/chores", {
     method: "POST",
@@ -340,7 +340,7 @@ test("one-time completion removes the active chore but retains its snapshot", as
 test("overdue recurring completion shifts the series before advancing", async (t) => {
   const app = await runningApp(t, () => new Date("2024-06-04T17:00:00.000Z"));
   const login = await app.request("/api/session", {
-    method: "POST", body: JSON.stringify({ userId: "M", password: PASSWORDS.MADY_PASSWORD }),
+    method: "POST", body: JSON.stringify({ userId: "M", password: PASSWORDS.BRAVO_PASSWORD }),
   });
   assert.equal(login.status, 200);
   const created = await app.request("/api/chores", {
@@ -396,7 +396,7 @@ test("login is public while app documents and code require a session", async (t)
   }
 
   const loginResponse = await app.request("/api/session", {
-    method: "POST", body: JSON.stringify({ userId: "D", password: PASSWORDS.DYLAN_PASSWORD }),
+    method: "POST", body: JSON.stringify({ userId: "D", password: PASSWORDS.ALPHA_PASSWORD }),
   });
   assert.equal(loginResponse.status, 200);
   assert.match(await (await app.request("/app")).text(), /id="appView"/);
@@ -431,7 +431,7 @@ test("authenticated SSE and push subscription ownership are enforced", async (t)
   const app = await runningApp(t);
   const unauthenticated = await app.request("/api/events");
   assert.equal(unauthenticated.status, 401);
-  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "M", password: PASSWORDS.MADY_PASSWORD }) });
+  await app.request("/api/session", { method: "POST", body: JSON.stringify({ userId: "M", password: PASSWORDS.BRAVO_PASSWORD }) });
   const endpoint = "https://fcm.googleapis.com/fcm/send/subscription";
   const invalid = await app.request("/api/push-subscriptions", {
     method: "PUT", body: JSON.stringify({ endpoint, keys: { p256dh: "a".repeat(32), auth: PUSH_KEYS.auth } }),

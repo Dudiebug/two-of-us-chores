@@ -12,21 +12,21 @@ try:
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.goto('http://localhost:3099/login')
-        page.locator('#loginUser').fill('dylan')
-        page.locator('#loginPassword').fill('dylan-test-password')
+        page.locator('#loginUser').fill('alpha')
+        page.locator('#loginPassword').fill('alpha-test-password')
         page.locator('#loginForm button[type=submit]').click()
         page.wait_for_url('**/app**')
         page.locator('#adminButton').wait_for(state='visible')
 
         assert page.locator('.group-toolbar').is_hidden()
 
-        dylan = page.locator('.filter-button[data-filter="D"]')
-        mady = page.locator('.filter-button[data-filter="M"]')
-        assert dylan.get_attribute('data-user-color') == 'teal'
-        assert mady.get_attribute('data-user-color') == 'rose'
-        dylan_bg = dylan.evaluate('(el) => getComputedStyle(el).backgroundColor')
-        mady_bg = mady.evaluate('(el) => getComputedStyle(el).backgroundColor')
-        assert dylan_bg != mady_bg
+        alpha = page.locator('.filter-button[data-filter="D"]')
+        bravo = page.locator('.filter-button[data-filter="M"]')
+        assert alpha.get_attribute('data-user-color') == 'teal'
+        assert bravo.get_attribute('data-user-color') == 'rose'
+        alpha_bg = alpha.evaluate('(el) => getComputedStyle(el).backgroundColor')
+        bravo_bg = bravo.evaluate('(el) => getComputedStyle(el).backgroundColor')
+        assert alpha_bg != bravo_bg
 
         page.locator('#addChoreButton').click()
         page.locator('#choreAssignee').select_option('M')
@@ -37,7 +37,7 @@ try:
         row = page.locator('.chore-row', has_text='Color smoke test')
         row.wait_for(state='visible')
         assert row.get_attribute('data-user-color') == 'rose'
-        assert row.evaluate('(el) => getComputedStyle(el).backgroundColor') == mady_bg
+        assert row.evaluate('(el) => getComputedStyle(el).backgroundColor') == bravo_bg
 
         for trigger, dialog, close in [
             ('#settingsButton', '#settingsDialog', '#closeSettingsButton'),
@@ -56,15 +56,15 @@ try:
         normal_user = browser.new_page(viewport={'width': 412, 'height': 915}, device_scale_factor=1)
         normal_user.on('pageerror', lambda error: errors.append(str(error)))
         normal_user.goto('http://localhost:3099/login')
-        normal_user.locator('#loginUser').fill('mady')
-        normal_user.locator('#loginPassword').fill('mady-test-password')
+        normal_user.locator('#loginUser').fill('bravo')
+        normal_user.locator('#loginPassword').fill('bravo-test-password')
         normal_user.locator('#loginForm button[type=submit]').click()
         normal_user.wait_for_url('**/app**')
-        mady = normal_user.locator('.filter-button[data-filter="M"]')
-        mady.wait_for(state='visible')
+        bravo = normal_user.locator('.filter-button[data-filter="M"]')
+        bravo.wait_for(state='visible')
         assert normal_user.locator('#adminButton').is_hidden()
-        assert mady.get_attribute('data-user-color') == 'rose'
-        mady_bg = mady.evaluate('(el) => getComputedStyle(el).backgroundColor')
+        assert bravo.get_attribute('data-user-color') == 'rose'
+        bravo_bg = bravo.evaluate('(el) => getComputedStyle(el).backgroundColor')
 
         normal_user.locator('#settingsButton').click()
         normal_user.locator('#settingsDialog').wait_for(state='visible')
@@ -75,8 +75,8 @@ try:
         assert response.status == 204
         assert response.request.post_data_json == {'colorKey': 'green'}
         normal_user.locator('#userColorSuccess').wait_for(state='visible')
-        assert mady.get_attribute('data-user-color') == 'green'
-        assert mady.evaluate('(el) => getComputedStyle(el).backgroundColor') != mady_bg
+        assert bravo.get_attribute('data-user-color') == 'green'
+        assert bravo.evaluate('(el) => getComputedStyle(el).backgroundColor') != bravo_bg
 
         api_state = normal_user.evaluate("async () => (await fetch('/api/state')).json()")
         assert api_state['user']['id'] == 'M'
@@ -84,9 +84,9 @@ try:
         assert next(user for user in api_state['users'] if user['id'] == 'M')['colorKey'] == 'green'
 
         normal_user.reload()
-        mady = normal_user.locator('.filter-button[data-filter="M"]')
-        mady.wait_for(state='visible')
-        assert mady.get_attribute('data-user-color') == 'green'
+        bravo = normal_user.locator('.filter-button[data-filter="M"]')
+        bravo.wait_for(state='visible')
+        assert bravo.get_attribute('data-user-color') == 'green'
         normal_user.locator('#settingsButton').click()
         normal_user.locator('#settingsDialog').wait_for(state='visible')
         assert normal_user.locator('#userColorOptions input[value="green"]').is_checked()

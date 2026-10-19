@@ -66,8 +66,8 @@ async function main() {
         console.log("Accounts created. Sign in with the administrator username to manage users and groups.");
       } finally { muted = false; rl.close(); }
     } else console.log("Existing accounts preserved. Manage users and groups in Chores → Admin.");
-    if (config.DYLAN_PASSWORD || config.MADY_PASSWORD) {
-      delete config.DYLAN_PASSWORD; delete config.MADY_PASSWORD; writeConfig(path, config);
+    if (config.ALPHA_PASSWORD || config.BRAVO_PASSWORD) {
+      delete config.ALPHA_PASSWORD; delete config.BRAVO_PASSWORD; writeConfig(path, config);
     }
   } finally { db.close(); }
 }

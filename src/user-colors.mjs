@@ -14,6 +14,6 @@ export function ensureUserColors(db) {
     db.exec(`ALTER TABLE users ADD COLUMN color_key TEXT NOT NULL DEFAULT 'teal'
       CHECK(color_key IN ('teal','rose','blue','violet','amber','green'))`);
     // Preserve the previous two-person visual distinction on upgraded installs.
-    db.exec("UPDATE users SET color_key='rose' WHERE id='M' OR lower(username)='mady'");
+    db.exec("UPDATE users SET color_key='rose' WHERE id='M'");
   }
 }

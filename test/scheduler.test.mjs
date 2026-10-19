@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { openDatabase } from "../src/db.mjs";
 import { createScheduler, rolloverMissed } from "../src/scheduler.mjs";
 
-const PASSWORDS = { DYLAN_PASSWORD: "dylan-test-password", MADY_PASSWORD: "mady-test-password" };
+const PASSWORDS = { ALPHA_PASSWORD: "alpha-test-password", BRAVO_PASSWORD: "bravo-test-password" };
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), "chores-scheduler-"));

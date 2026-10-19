@@ -99,8 +99,8 @@ def assert_scroll_contract(page, selector, viewport, require_scroll):
 
 def login(page):
     page.goto(f"{BASE_URL}/login")
-    page.locator("#loginUser").fill("dylan")
-    page.locator("#loginPassword").fill("dylan-test-password")
+    page.locator("#loginUser").fill("alpha")
+    page.locator("#loginPassword").fill("alpha-test-password")
     page.locator("#loginForm button[type=submit]").click()
     page.wait_for_url("**/app**")
     page.locator("#adminButton").wait_for(state="visible")

@@ -197,10 +197,10 @@ function migrateChores(db) {
 async function seedUsers(db, passwords) {
   // Compatibility bootstrap for existing deployments/test fixtures only. New installs use deploy/bootstrap.mjs.
   if (db.prepare("SELECT COUNT(*) AS n FROM users").get().n) return;
-  if (!(passwords.DYLAN_PASSWORD || passwords.D) && !(passwords.MADY_PASSWORD || passwords.M)) return;
+  if (!(passwords.ALPHA_PASSWORD || passwords.D) && !(passwords.BRAVO_PASSWORD || passwords.M)) return;
   const definitions = [
-    ["D", "Dylan", passwords.DYLAN_PASSWORD ?? passwords.D],
-    ["M", "Mady", passwords.MADY_PASSWORD ?? passwords.M],
+    ["D", "Alpha", passwords.ALPHA_PASSWORD ?? passwords.D],
+    ["M", "Bravo", passwords.BRAVO_PASSWORD ?? passwords.M],
   ];
   const missing = definitions.filter(([id]) => !db.prepare("SELECT 1 FROM users WHERE id=?").get(id));
   for (const [, name, password] of missing) {

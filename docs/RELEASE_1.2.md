@@ -22,10 +22,10 @@ Run `cd /opt/two-of-us-chores && bash install.sh --update` on the LXC. The insta
 backs up the database/config/revision before updating. Install the signed 1.2 APK over
 1.1/1.1.1. Update the server before testing the APK.
 
-Legacy Dylan and Mady passwords are preserved. Username login is `dylan` / `mady`;
-all existing content is migrated into `Home`. For this legacy installation, Dylan is
-the initial administrator; Mady remains a regular group member. New installations
-have NO automatic Dylan/Mady accounts: terminal setup defines their administrator.
+Legacy account passwords are preserved. Usernames are the lowercase legacy display names;
+all existing content is migrated into `Home`. For a legacy installation, the first legacy
+account is the initial administrator; the second remains a regular group member. New installations
+have NO automatic legacy accounts: terminal setup defines their administrator.
 Administration can explicitly grant other administrators, but cannot remove/disable
 the last active administrator. Do not expose a public unauthenticated setup wizard.
 

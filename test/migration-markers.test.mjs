@@ -7,7 +7,7 @@ test('v6 migration preserves notification deduplication across upgrade and repea
   const db = new DatabaseSync(':memory:');
   try {
     db.exec(`CREATE TABLE users(id TEXT PRIMARY KEY,name TEXT,initial TEXT,password_salt TEXT,password_hash TEXT,digest_time TEXT,missed_alert_time TEXT,default_reminder_time TEXT,activity_notifications INTEGER,updated_at TEXT);
-      INSERT INTO users VALUES ('D','Dylan','D','salt','hash',NULL,NULL,NULL,1,'2026-09-14');
+      INSERT INTO users VALUES ('D','Alpha','D','salt','hash',NULL,NULL,NULL,1,'2026-09-14');
       CREATE TABLE chores(id INTEGER PRIMARY KEY); INSERT INTO chores VALUES (1);
       CREATE TABLE completion_history(id INTEGER PRIMARY KEY,undo_snapshot TEXT);
       CREATE TABLE native_notification_events(id INTEGER PRIMARY KEY);

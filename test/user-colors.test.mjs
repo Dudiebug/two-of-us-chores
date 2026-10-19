@@ -6,8 +6,8 @@ import { USER_COLORS } from "../src/user-colors.mjs";
 
 test("users have predefined colors that admins can change and group members can read", async () => {
   const db = await openDatabase(":memory:", {
-    DYLAN_PASSWORD: "Dylan-password-123!",
-    MADY_PASSWORD: "Mady-password-123!",
+    ALPHA_PASSWORD: "Alpha-password-123!",
+    BRAVO_PASSWORD: "Bravo-password-123!",
     HOUSEHOLD_TIMEZONE: "UTC",
   });
   try {
